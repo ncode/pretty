@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"fmt"
 	"io"
 	"strings"
 
@@ -15,8 +16,10 @@ func usage(w io.Writer) {
 }
 
 var completer = readline.NewPrefixCompleter(
+	readline.PcItem("exit"),
 	readline.PcItem("bye"),
 	readline.PcItem("help"),
+	readline.PcItem("list"),
 )
 
 func filterInput(r rune) (rune, bool) {
@@ -34,7 +37,7 @@ func Spawn(hosts []*ssh.Host) {
 	go message.Broker(hosts, command, status)
 
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:              "\033[31m»\033[0m ",
+		Prompt:              "pretool>> ",
 		HistoryFile:         "/tmp/readline.tmp",
 		AutoComplete:        completer,
 		InterruptPrompt:     "^C",
@@ -42,7 +45,6 @@ func Spawn(hosts []*ssh.Host) {
 		HistorySearchFold:   true,
 		FuncFilterInputRune: filterInput,
 	})
-	rl.SetPrompt("pretool>> ")
 	if err != nil {
 		panic(err)
 	}
@@ -68,6 +70,10 @@ func Spawn(hosts []*ssh.Host) {
 			goto exit
 		case line == "exit":
 			goto exit
+		case line == "list":
+			for _, host := range hosts {
+				fmt.Printf("%v: Connected(%v)\n", host.Hostname, host.IsConnected)
+			}
 		case line == "":
 		default:
 			command <- line

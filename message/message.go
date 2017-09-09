@@ -20,9 +20,11 @@ func worker(host *ssh.Host, input <-chan string) {
 		}
 
 		output, _ := session.CombinedOutput(string(command))
-		fmt.Println()
-		for _, l := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
-			host.Color.Printf("pretool>> %s: %s\n", host.Hostname, l)
+		for pos, l := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+			if pos == 0 {
+				fmt.Printf("\n")
+			}
+			host.Color.Printf("%s: %s\n", host.Hostname, l)
 		}
 		fmt.Printf("pretool>> ")
 	}
