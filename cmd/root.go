@@ -39,11 +39,33 @@ usage:
 `,
 	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		var colors = []color.Attribute{
+			color.FgRed,
+			color.FgGreen,
+			color.FgYellow,
+			color.FgBlue,
+			color.FgMagenta,
+			color.FgCyan,
+			color.FgWhite,
+			color.FgHiBlack,
+			color.FgHiRed,
+			color.FgHiGreen,
+			color.FgHiYellow,
+			color.FgHiBlue,
+			color.FgHiMagenta,
+			color.FgHiCyan,
+			color.FgHiWhite,
+		}
+
+		for len(colors) <= len(args) {
+			colors = append(colors, colors...)
+		}
+
 		hosts := []*ssh.Host{}
-		for _, hostname := range args {
+		for pos, hostname := range args {
 			host := &ssh.Host{
 				Hostname: hostname,
-				Color:    color.New(color.FgRed),
+				Color:    color.New(colors[pos%len(colors)]),
 			}
 			hosts = append(hosts, host)
 		}
