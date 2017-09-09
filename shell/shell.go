@@ -19,6 +19,7 @@ var completer = readline.NewPrefixCompleter(
 	readline.PcItem("exit"),
 	readline.PcItem("bye"),
 	readline.PcItem("help"),
+	readline.PcItem("status"),
 	readline.PcItem("list"),
 )
 
@@ -74,6 +75,15 @@ func Spawn(hosts []*ssh.Host) {
 			for _, host := range hosts {
 				fmt.Printf("%v: Connected(%v)\n", host.Hostname, host.IsConnected)
 			}
+		case line == "status":
+			count := 0
+			for _, host := range hosts {
+				if host.IsConnected == true {
+					count++
+				}
+			}
+			fmt.Printf("Connected hosts (%d)\n", count)
+			fmt.Printf("Failed hosts (%d)\n", len(hosts)-count)
 		case line == "":
 		default:
 			command <- line
