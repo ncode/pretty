@@ -38,7 +38,9 @@ func Broker(hosts []*ssh.Host, input <-chan string, status chan<- string) {
 
 	for cmd := range input {
 		for _, host := range hosts {
-			host.Channel <- cmd
+			if host.IsConnected {
+				host.Channel <- cmd
+			}
 		}
 		status <- "done"
 	}
