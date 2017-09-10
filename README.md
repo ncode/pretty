@@ -8,7 +8,7 @@ go get -u github.com/ncode/pretool
 ## Config:
 By default it lives in ~/.pretool.yaml
 
-````
+```
 username: ncode
 groups:
     hosts:
