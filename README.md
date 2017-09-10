@@ -4,24 +4,57 @@ Parallel remote execution tool - (Yet another parallel ssh/shell)
 ## Installation:
 go get -u github.com/ncode/pretool
 
+
+## Config:
+By default it lives in ~/.pretool.yaml
+
+````
+username: ncode
+groups:
+    hosts:
+        - host1
+        - host2
+        - host3
+        - host4
+```
+
+
 ## Usage:
 ```
 Parallel remote execution tool - (Yet another parallel ssh/shell)
 
 usage:
-    pretool <host1> <host2> <host3>...
+	pretool <host1> <host2> <host3>...
 
 Usage:
-pretool [flags]
+  pretool [flags]
 
 Flags:
-    --config string   config file (default is $HOME/.pretool.yaml)
--h, --help            help for pretool
+      --config string      config file (default is $HOME/.pretool.yaml)
+  -h, --help               help for pretool
+  -G, --hostGroup string   group of hosts to be loaded from the config file
+  -H, --hostsFile string   hosts file to be used instead of the args via stdout (one host per line)
 ```
 
 Connecting to hosts:
 ```
 pretool host1 host2 host3 host4
+pretool(2)>>
+Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
+Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
+```
+
+Connecting to hostGroups:
+```
+pretool -G hosts
+pretool(2)>>
+Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
+Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
+```
+
+Connecting to hostsFile:
+```
+pretool -H /tmp/hosts.txt
 pretool(2)>>
 Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
 Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
