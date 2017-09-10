@@ -15,8 +15,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	homedir "github.com/mitchellh/go-homedir"
@@ -27,6 +30,8 @@ import (
 )
 
 var cfgFile string
+var hostsFile string
+var hostGroup string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
@@ -37,8 +42,35 @@ var RootCmd = &cobra.Command{
 usage:
 	pretool <host1> <host2> <host3>...
 `,
-	Args: cobra.MinimumNArgs(1),
+	//Args: cobra.MinimumNArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 && hostGroup == "" && hostsFile == "" {
+			return errors.New("requires at least one host, hostGroup ou hostsFile")
+		}
+		return nil
+	},
 	Run: func(cmd *cobra.Command, args []string) {
+		if hostGroup != "" && len(args) > 1 {
+			toAppend := viper.GetStringSlice(fmt.Sprintf("groups.%s", hostGroup))
+			args = append(args, toAppend...)
+		} else if hostGroup != "" && len(args) < 1 {
+			args = viper.GetStringSlice(fmt.Sprintf("groups.%s", hostGroup))
+		}
+
+		if hostsFile != "" {
+			data, err := ioutil.ReadFile(hostsFile)
+			if err != nil {
+				fmt.Printf("unable to read hostsFile: %v\n", err)
+				os.Exit(1)
+			}
+			for _, host := range strings.Split(string(data), "\n") {
+				if host == "" {
+					continue
+				}
+				args = append(args, strings.TrimSpace(host))
+			}
+		}
+
 		var colors = []color.Attribute{
 			color.FgRed,
 			color.FgGreen,
@@ -85,6 +117,8 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pretool.yaml)")
+	RootCmd.PersistentFlags().StringVarP(&hostsFile, "hostsFile", "H", "", "hosts file to be used instead of the args via stdout (one host per line)")
+	RootCmd.PersistentFlags().StringVarP(&hostGroup, "hostGroup", "G", "", "group of hosts to be loaded from the config file")
 }
 
 // initConfig reads in config file and ENV variables if set.
