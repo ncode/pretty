@@ -4,7 +4,6 @@ Parallel remote execution tool - (Yet another parallel ssh/shell)
 ## Installation:
 go get -u github.com/ncode/pretool
 
-
 ## Config:
 By default it lives in ~/.pretool.yaml
 
@@ -17,7 +16,6 @@ groups:
         - host3
         - host4
 ```
-
 
 ## Usage:
 ```
