@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/viper"
@@ -18,6 +19,7 @@ type Host struct {
 	Hostname    string
 	IsConnected bool
 	Channel     chan string
+	IsWaiting   bool
 }
 
 func Agent() ssh.AuthMethod {
@@ -46,6 +48,7 @@ func Connection(hostname string) (connection *ssh.Client, err error) {
 		Auth: []ssh.AuthMethod{
 			Agent(),
 		},
+		Timeout: 10 * time.Second,
 	}
 
 	connection, err = ssh.Dial("tcp", fmt.Sprintf("%s:22", hostname), sshConfig)
