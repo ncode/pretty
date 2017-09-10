@@ -23,13 +23,15 @@ Connecting to hosts:
 ```
 pretool host1 host2 host3 host4
 pretool(2)>>
+Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
+Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
 ```
 
 List connection status:
 ```
 pretool(2)>> :status
 Connected hosts (2)
-Failed hosts (0)
+Failed hosts (2)
 ```
 
 List hosts:
