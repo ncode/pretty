@@ -17,7 +17,6 @@ func usage(w io.Writer) {
 }
 
 var completer = readline.NewPrefixCompleter(
-	readline.PcItem(":exit"),
 	readline.PcItem(":bye"),
 	readline.PcItem(":help"),
 	readline.PcItem(":status"),
@@ -33,12 +32,13 @@ func filterInput(r rune) (rune, bool) {
 	return r, true
 }
 
-func Spawn(hosts []*ssh.Host) {
+func Spawn(hostList *ssh.HostList) {
 	command := make(chan string)
-	go message.Broker(hosts, command)
+	go message.Broker(hostList, command)
+	promtp := "pretool(0)>> "
 
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:              fmt.Sprintf("pretool(0)/(%d)>> ", len(hosts)),
+		Prompt:              promtp,
 		HistoryFile:         "/tmp/readline.tmp",
 		AutoComplete:        completer,
 		InterruptPrompt:     "^C",
@@ -63,19 +63,7 @@ func Spawn(hosts []*ssh.Host) {
 			break
 		}
 
-		connected := 0
-		waiting := 0
-
-		for _, host := range hosts {
-			if atomic.LoadInt64(&host.IsConnected) == 1 {
-				connected++
-				if atomic.LoadInt64(&host.IsWaiting) == 1 {
-					waiting++
-				}
-			}
-		}
-
-		promtp := ""
+		connected, waiting := hostList.State()
 		if waiting > 0 {
 			promtp = fmt.Sprintf("pretool(%d)/(%d)>> ", waiting, connected)
 		} else {
@@ -89,19 +77,19 @@ func Spawn(hosts []*ssh.Host) {
 			usage(rl.Stderr())
 		case line == ":bye":
 			goto exit
-		case line == ":exit":
+		case line == "exit":
 			goto exit
 		case line == ":list":
-			for _, host := range hosts {
+			for _, host := range hostList.Hosts() {
 				var state bool
-				if atomic.LoadInt64(&host.IsConnected) == 1 {
+				if atomic.LoadInt32(&host.IsConnected) == 1 {
 					state = true
 				}
 				fmt.Printf("%v: Connected(%v)\n", host.Hostname, state)
 			}
 		case line == ":status":
 			fmt.Printf("Connected hosts (%d)\n", connected)
-			fmt.Printf("Failed hosts (%d)\n", len(hosts)-connected)
+			fmt.Printf("Failed hosts (%d)\n", hostList.Len()-connected)
 		case line == "":
 		default:
 			command <- line

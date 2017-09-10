@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fatih/color"
@@ -14,12 +16,49 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
+func NewHostList() *HostList {
+	hl := HostList{}
+	hl.hosts = make([]*Host, 0)
+	return &hl
+}
+
+type HostList struct {
+	mu    sync.Mutex
+	hosts []*Host
+}
+
+func (h *HostList) AddHost(host *Host) {
+	h.mu.Lock()
+	h.hosts = append(h.hosts, host)
+	h.mu.Unlock()
+}
+
+func (h *HostList) Hosts() []*Host {
+	return h.hosts
+}
+
+func (h *HostList) Len() int {
+	return len(h.hosts)
+}
+
+func (h *HostList) State() (connected int, waiting int) {
+	for _, host := range h.hosts {
+		if atomic.LoadInt32(&host.IsConnected) == 1 {
+			connected++
+			if atomic.LoadInt32(&host.IsWaiting) == 1 {
+				waiting++
+			}
+		}
+	}
+	return connected, waiting
+}
+
 type Host struct {
 	Color       *color.Color
 	Hostname    string
-	IsConnected int64
+	IsConnected int32
 	Channel     chan string
-	IsWaiting   int64
+	IsWaiting   int32
 }
 
 func Agent() ssh.AuthMethod {

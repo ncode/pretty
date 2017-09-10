@@ -92,16 +92,15 @@ usage:
 			colors = append(colors, colors...)
 		}
 
-		hosts := []*ssh.Host{}
+		hostList := ssh.NewHostList()
 		for pos, hostname := range args {
 			host := &ssh.Host{
 				Hostname: hostname,
 				Color:    color.New(colors[pos%len(colors)]),
 			}
-			hosts = append(hosts, host)
+			hostList.AddHost(host)
 		}
-
-		shell.Spawn(hosts)
+		shell.Spawn(hostList)
 	},
 }
 
