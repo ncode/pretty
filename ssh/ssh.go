@@ -17,9 +17,9 @@ import (
 type Host struct {
 	Color       *color.Color
 	Hostname    string
-	IsConnected bool
+	IsConnected int64
 	Channel     chan string
-	IsWaiting   bool
+	IsWaiting   int64
 }
 
 func Agent() ssh.AuthMethod {

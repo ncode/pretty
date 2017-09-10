@@ -3,6 +3,7 @@ package message
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ncode/pretool/ssh"
 )
@@ -12,18 +13,18 @@ func worker(host *ssh.Host, input <-chan string) {
 	if err != nil {
 		fmt.Printf("Error connection to host %s: %v\n", host.Hostname, err)
 	} else {
-		host.IsConnected = true
+		atomic.StoreInt64(&host.IsConnected, 1)
 	}
 
 	for command := range input {
-		if host.IsConnected {
+		if host.IsConnected == 1 {
 			session, err := ssh.Session(connection)
 			if err != nil {
 				fmt.Printf("Unable to open session: %v\n", err)
-				host.IsConnected = false
+				atomic.StoreInt64(&host.IsConnected, 0)
 			}
 
-			host.IsWaiting = true
+			atomic.StoreInt64(&host.IsWaiting, 1)
 			output, _ := session.CombinedOutput(string(command))
 			for pos, l := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
 				if pos == 0 {
@@ -31,7 +32,7 @@ func worker(host *ssh.Host, input <-chan string) {
 				}
 				host.Color.Printf("%s: %s\n", host.Hostname, l)
 			}
-			host.IsWaiting = false
+			atomic.StoreInt64(&host.IsWaiting, 0)
 		}
 	}
 }

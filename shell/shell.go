@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/chzyer/readline"
 	"github.com/ncode/pretool/message"
@@ -64,10 +65,11 @@ func Spawn(hosts []*ssh.Host) {
 
 		connected := 0
 		waiting := 0
+
 		for _, host := range hosts {
-			if host.IsConnected {
+			if atomic.LoadInt64(&host.IsConnected) == 1 {
 				connected++
-				if host.IsWaiting {
+				if atomic.LoadInt64(&host.IsWaiting) == 1 {
 					waiting++
 				}
 			}
@@ -91,7 +93,11 @@ func Spawn(hosts []*ssh.Host) {
 			goto exit
 		case line == ":list":
 			for _, host := range hosts {
-				fmt.Printf("%v: Connected(%v)\n", host.Hostname, host.IsConnected)
+				var state bool
+				if atomic.LoadInt64(&host.IsConnected) == 1 {
+					state = true
+				}
+				fmt.Printf("%v: Connected(%v)\n", host.Hostname, state)
 			}
 		case line == ":status":
 			fmt.Printf("Connected hosts (%d)\n", connected)
