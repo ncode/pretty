@@ -9,6 +9,7 @@ import (
 	"github.com/chzyer/readline"
 	"github.com/ncode/pretool/message"
 	"github.com/ncode/pretool/ssh"
+	"github.com/spf13/viper"
 )
 
 func usage(w io.Writer) {
@@ -35,11 +36,11 @@ func filterInput(r rune) (rune, bool) {
 func Spawn(hostList *ssh.HostList) {
 	command := make(chan string)
 	go message.Broker(hostList, command)
-	promtp := "pretool(0)>> "
+	prompt := "pretool(0)>> "
 
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:              promtp,
-		HistoryFile:         "/tmp/readline.tmp",
+		Prompt:              prompt,
+		HistoryFile:         viper.GetString("history_file"),
 		AutoComplete:        completer,
 		InterruptPrompt:     "^C",
 		EOFPrompt:           "exit",
@@ -65,11 +66,11 @@ func Spawn(hostList *ssh.HostList) {
 
 		connected, waiting := hostList.State()
 		if waiting > 0 {
-			promtp = fmt.Sprintf("pretool(%d)/(%d)>> ", waiting, connected)
+			prompt = fmt.Sprintf("pretool(%d)/(%d)>> ", waiting, connected)
 		} else {
-			promtp = fmt.Sprintf("pretool(%d)>> ", connected)
+			prompt = fmt.Sprintf("pretool(%d)>> ", connected)
 		}
-		rl.SetPrompt(promtp)
+		rl.SetPrompt(prompt)
 
 		line = strings.TrimSpace(line)
 		switch {
@@ -93,7 +94,7 @@ func Spawn(hostList *ssh.HostList) {
 		case line == "":
 		default:
 			command <- line
-			fmt.Printf(promtp)
+			fmt.Printf(prompt)
 		}
 	}
 exit:

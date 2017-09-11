@@ -136,6 +136,7 @@ func initConfig() {
 		// Search config in home directory with name ".pretool" (without extension).
 		viper.AddConfigPath(home)
 		viper.SetConfigName(".pretool")
+		viper.SetDefault("history_file", fmt.Sprintf("%s/.pretool.history", home))
 		viper.SetDefault("ssh_private_key", fmt.Sprintf("%s/.ssh/id_rsa", home))
 	}
 
