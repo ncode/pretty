@@ -91,3 +91,7 @@ a single point.
 After using [polysh](http://guichaz.free.fr/polysh) for a long time. It came with
 the motivation to try to write my own parallel shell in GO. In the end the tool worked 
 so well and I decided to open source the code.
+
+### TODO:
+Forward Control+C and Control+Z requests to the destination terminal
+Support for encrypted ssh keys
