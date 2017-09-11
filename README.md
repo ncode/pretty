@@ -9,6 +9,8 @@ By default it lives in ~/.pretool.yaml
 
 ```
 username: ncode
+history_file: ~/.pretool.history
+ssh_private_key: ~/.ssh/id_rsa
 groups:
     hosts:
         - host1
