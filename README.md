@@ -1,5 +1,5 @@
 # pretty
-Parallel remote execution tool - (Yet another parallel ssh/shell)
+Parallel remote execution tty - (Yet another parallel ssh/shell)
 
 ## Installation:
 go get -u github.com/ncode/pretty
