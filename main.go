@@ -14,7 +14,7 @@
 
 package main
 
-import "github.com/ncode/pretool/cmd"
+import "github.com/ncode/pretty/cmd"
 
 func main() {
 	cmd.Execute()

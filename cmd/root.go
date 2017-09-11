@@ -23,8 +23,8 @@ import (
 
 	"github.com/fatih/color"
 	homedir "github.com/mitchellh/go-homedir"
-	"github.com/ncode/pretool/shell"
-	"github.com/ncode/pretool/ssh"
+	"github.com/ncode/pretty/shell"
+	"github.com/ncode/pretty/ssh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -35,12 +35,12 @@ var hostGroup string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "pretool",
+	Use:   "pretty",
 	Short: "Parallel remote execution tool",
 	Long: `Parallel remote execution tool - (Yet another parallel ssh/shell)
 
 usage:
-	pretool <host1> <host2> <host3>...
+	pretty <host1> <host2> <host3>...
 `,
 	//Args: cobra.MinimumNArgs(1),
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -115,7 +115,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pretool.yaml)")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pretty.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&hostsFile, "hostsFile", "H", "", "hosts file to be used instead of the args via stdout (one host per line)")
 	RootCmd.PersistentFlags().StringVarP(&hostGroup, "hostGroup", "G", "", "group of hosts to be loaded from the config file")
 }
@@ -133,10 +133,10 @@ func initConfig() {
 			os.Exit(1)
 		}
 
-		// Search config in home directory with name ".pretool" (without extension).
+		// Search config in home directory with name ".pretty" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".pretool")
-		viper.SetDefault("history_file", fmt.Sprintf("%s/.pretool.history", home))
+		viper.SetConfigName(".pretty")
+		viper.SetDefault("history_file", fmt.Sprintf("%s/.pretty.history", home))
 		viper.SetDefault("ssh_private_key", fmt.Sprintf("%s/.ssh/id_rsa", home))
 	}
 

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 
 	"github.com/chzyer/readline"
-	"github.com/ncode/pretool/message"
-	"github.com/ncode/pretool/ssh"
+	"github.com/ncode/pretty/message"
+	"github.com/ncode/pretty/ssh"
 	"github.com/spf13/viper"
 )
 
@@ -36,7 +36,7 @@ func filterInput(r rune) (rune, bool) {
 func Spawn(hostList *ssh.HostList) {
 	command := make(chan string)
 	go message.Broker(hostList, command)
-	prompt := "pretool(0)>> "
+	prompt := "pretty(0)>> "
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:              prompt,
@@ -66,9 +66,9 @@ func Spawn(hostList *ssh.HostList) {
 
 		connected, waiting := hostList.State()
 		if waiting > 0 {
-			prompt = fmt.Sprintf("pretool(%d)/(%d)>> ", waiting, connected)
+			prompt = fmt.Sprintf("pretty(%d)/(%d)>> ", waiting, connected)
 		} else {
-			prompt = fmt.Sprintf("pretool(%d)>> ", connected)
+			prompt = fmt.Sprintf("pretty(%d)>> ", connected)
 		}
 		rl.SetPrompt(prompt)
 

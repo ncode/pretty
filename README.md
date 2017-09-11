@@ -1,15 +1,15 @@
-# pretool
+# pretty
 Parallel remote execution tool - (Yet another parallel ssh/shell)
 
 ## Installation:
-go get -u github.com/ncode/pretool
+go get -u github.com/ncode/pretty
 
 ## Config:
-By default it lives in ~/.pretool.yaml
+By default it lives in ~/.pretty.yaml
 
 ```
 username: ncode
-history_file: ~/.pretool.history
+history_file: ~/.pretty.history
 ssh_private_key: ~/.ssh/id_rsa
 groups:
     hosts:
@@ -24,52 +24,52 @@ groups:
 Parallel remote execution tool - (Yet another parallel ssh/shell)
 
 usage:
-	pretool <host1> <host2> <host3>...
+	pretty <host1> <host2> <host3>...
 
 Usage:
-  pretool [flags]
+  pretty [flags]
 
 Flags:
-      --config string      config file (default is $HOME/.pretool.yaml)
-  -h, --help               help for pretool
+      --config string      config file (default is $HOME/.pretty.yaml)
+  -h, --help               help for pretty
   -G, --hostGroup string   group of hosts to be loaded from the config file
   -H, --hostsFile string   hosts file to be used instead of the args via stdout (one host per line)
 ```
 
 Connecting to hosts:
 ```
-pretool host1 host2 host3 host4
-pretool(2)>>
+pretty host1 host2 host3 host4
+pretty(2)>>
 Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
 Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
 ```
 
 Connecting to hostGroups:
 ```
-pretool -G hosts
-pretool(2)>>
+pretty -G hosts
+pretty(2)>>
 Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
 Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
 ```
 
 Connecting to hostsFile:
 ```
-pretool -H /tmp/hosts.txt
-pretool(2)>>
+pretty -H /tmp/hosts.txt
+pretty(2)>>
 Error connection to host host3: Failed to dial: dial tcp: lookup host3: no such host
 Error connection to host host4: Failed to dial: dial tcp: lookup host4: no such host
 ```
 
 List connection status:
 ```
-pretool(2)>> :status
+pretty(2)>> :status
 Connected hosts (2)
 Failed hosts (2)
 ```
 
 List hosts:
 ```
-pretool(2)>> :list
+pretty(2)>> :list
 host1: Connected(true)
 host2: Connected(true)
 host3: Connected(false)
@@ -78,13 +78,13 @@ host4: Connected(false)
 
 Running commands:
 ```
-pretool(2)>> whoami
+pretty(2)>> whoami
 host1: ncode
 host2: ncode
 ```
 
 ## Why do I need it?
-pretool is a tool to control interactive shells across multiple hosts from
+pretty is a tool to control interactive shells across multiple hosts from
 a single point.
 
 ### Motivation

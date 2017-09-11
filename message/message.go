@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/ncode/pretool/ssh"
+	"github.com/ncode/pretty/ssh"
 )
 
 func worker(host *ssh.Host, input <-chan string) {
