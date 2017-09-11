@@ -36,8 +36,8 @@ var hostGroup string
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "pretty",
-	Short: "Parallel remote execution tool",
-	Long: `Parallel remote execution tool - (Yet another parallel ssh/shell)
+	Short: "Parallel remote execution tty",
+	Long: `Parallel remote execution tty - (Yet another parallel ssh/shell)
 
 usage:
 	pretty <host1> <host2> <host3>...

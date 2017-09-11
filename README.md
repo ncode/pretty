@@ -21,7 +21,7 @@ groups:
 
 ## Usage:
 ```
-Parallel remote execution tool - (Yet another parallel ssh/shell)
+Parallel remote execution tty - (Yet another parallel ssh/shell)
 
 usage:
 	pretty <host1> <host2> <host3>...
