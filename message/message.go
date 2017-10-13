@@ -2,11 +2,34 @@ package message
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 
 	"github.com/ncode/pretty/ssh"
 )
+
+type ProxyWriter struct {
+	file *os.File
+	host *ssh.Host
+}
+
+func NewProxyWriter(file *os.File, host *ssh.Host) *ProxyWriter {
+	return &ProxyWriter{
+		file: file,
+		host: host,
+	}
+}
+
+func (w *ProxyWriter) Write(output []byte) (int, error) {
+	for pos, l := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+		if pos == 0 {
+			fmt.Printf("\r")
+		}
+		w.host.Color.Printf("%s: %s\n", w.host.Hostname, l)
+	}
+	return len(output), nil
+}
 
 func worker(host *ssh.Host, input <-chan string) {
 	connection, err := ssh.Connection(host.Hostname)
@@ -24,12 +47,11 @@ func worker(host *ssh.Host, input <-chan string) {
 		}
 
 		atomic.StoreInt32(&host.IsWaiting, 1)
-		output, _ := session.CombinedOutput(string(command))
-		for pos, l := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
-			if pos == 0 {
-				fmt.Printf("\r")
-			}
-			host.Color.Printf("%s: %s\n", host.Hostname, l)
+		session.Stdout = NewProxyWriter(os.Stdout, host)
+		session.Stderr = NewProxyWriter(os.Stderr, host)
+		err = session.Start(string(command))
+		if err != nil {
+			fmt.Println(err)
 		}
 		atomic.StoreInt32(&host.IsWaiting, 0)
 	}
