@@ -8,7 +8,7 @@ import (
 
 	"github.com/chzyer/readline"
 	"github.com/ncode/pretty/message"
-	"github.com/ncode/pretty/ssh"
+	"github.com/ncode/pretty/sshConn"
 	"github.com/spf13/viper"
 )
 
@@ -33,7 +33,7 @@ func filterInput(r rune) (rune, bool) {
 	return r, true
 }
 
-func Spawn(hostList *ssh.HostList) {
+func Spawn(hostList *sshConn.HostList) {
 	command := make(chan string)
 	go message.Broker(hostList, command)
 	prompt := "pretty(0)>> "

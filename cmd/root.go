@@ -24,7 +24,7 @@ import (
 	"github.com/fatih/color"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/ncode/pretty/shell"
-	"github.com/ncode/pretty/ssh"
+	"github.com/ncode/pretty/sshConn"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -92,9 +92,9 @@ usage:
 			colors = append(colors, colors...)
 		}
 
-		hostList := ssh.NewHostList()
+		hostList := sshConn.NewHostList()
 		for pos, hostname := range args {
-			host := &ssh.Host{
+			host := &sshConn.Host{
 				Hostname: hostname,
 				Color:    color.New(colors[pos%len(colors)]),
 			}
