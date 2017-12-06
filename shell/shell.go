@@ -34,7 +34,8 @@ func filterInput(r rune) (rune, bool) {
 
 func Spawn(hostList *sshConn.HostList) {
 	command := make(chan string)
-	go sshConn.Broker(hostList, command)
+	sent := make(chan bool)
+	go sshConn.Broker(hostList, command, sent)
 	prompt := "pretty(0)>> "
 
 	rl, err := readline.NewEx(&readline.Config{
@@ -92,7 +93,10 @@ func Spawn(hostList *sshConn.HostList) {
 			fmt.Printf("Failed hosts (%d)\n", hostList.Len()-connected)
 		case line == "":
 		default:
-			command <- line
+			if connected > 0 {
+				command <- line
+				<-sent
+			}
 			fmt.Printf(prompt)
 		}
 	}

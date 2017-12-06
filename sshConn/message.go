@@ -32,34 +32,26 @@ func (w *ProxyWriter) Write(output []byte) (int, error) {
 func worker(host *Host, input <-chan string) {
 	connection, err := Connection(host.Hostname)
 	if err != nil {
-		fmt.Printf("Error connection to host %s: %v\n", host.Hostname, err)
+		fmt.Printf("error connection to host %s: %v\n", host.Hostname, err)
+		return
 	} else {
 		atomic.StoreInt32(&host.IsConnected, 1)
 	}
-	for command := range input {
-		session, err := Session(connection)
-		if err != nil {
-			fmt.Printf("Unable to open session: %v\n", err)
-			atomic.StoreInt32(&host.IsConnected, 0)
-			continue
-		}
+	stdin, _, err := Session(connection, host)
+	if err != nil {
+		fmt.Printf("unable to open session: %v\n", err)
+		atomic.StoreInt32(&host.IsConnected, 0)
+		return
+	}
 
+	for command := range input {
 		atomic.StoreInt32(&host.IsWaiting, 1)
-		session.Stdout = NewProxyWriter(os.Stdout, host)
-		session.Stderr = NewProxyWriter(os.Stderr, host)
-		err = session.Start(string(command))
-		if err != nil {
-			fmt.Println(err)
-		}
-		err = session.Wait()
-		if err != nil {
-			fmt.Println(err)
-		}
+		fmt.Fprint(stdin, string(command) + "\n")
 		atomic.StoreInt32(&host.IsWaiting, 0)
 	}
 }
 
-func Broker(hostList *HostList, input <-chan string) {
+func Broker(hostList *HostList, input <-chan string, sent chan <- bool) {
 	for _, host := range hostList.Hosts() {
 		host.Channel = make(chan string)
 		go worker(host, host.Channel)
@@ -69,6 +61,7 @@ func Broker(hostList *HostList, input <-chan string) {
 		for _, host := range hostList.Hosts() {
 			if atomic.LoadInt32(&host.IsConnected) == 1 {
 				host.Channel <- cmd
+				sent <- true
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package sshConn
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -58,6 +59,7 @@ type Host struct {
 	Hostname    string
 	IsConnected int32
 	Channel     chan string
+	ControlC    chan os.Signal
 	IsWaiting   int32
 }
 
@@ -71,12 +73,12 @@ func Agent() ssh.AuthMethod {
 func PublicKeyFile(privateKey string) ssh.AuthMethod {
 	key, err := ioutil.ReadFile(privateKey)
 	if err != nil {
-		log.Fatalf("Unable to read private key: %v", err)
+		log.Fatalf("unable to read private key: %v", err)
 	}
 
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		log.Fatalf("Unable to parse private key: %v", err)
+		log.Fatalf("unable to parse private key: %v", err)
 	}
 	return ssh.PublicKeys(signer)
 }
@@ -92,16 +94,29 @@ func Connection(hostname string) (connection *ssh.Client, err error) {
 
 	connection, err = ssh.Dial("tcp", fmt.Sprintf("%s:22", hostname), sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to dial: %s", err)
+		return nil, fmt.Errorf("failed to dial: %s", err)
 	}
 
 	return connection, err
 }
 
-func Session(connection *ssh.Client) (session *ssh.Session, err error) {
+func Session(connection *ssh.Client, host *Host) (stdin io.WriteCloser, session *ssh.Session, err error) {
 	session, err = connection.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create session: %s", err)
+		return stdin, session, err
 	}
-	return session, err
+
+	session.Stdout = NewProxyWriter(os.Stdout, host)
+	session.Stderr = NewProxyWriter(os.Stderr, host)
+	stdin, err = session.StdinPipe()
+	if err != nil {
+		return stdin, session, err
+	}
+
+	err = session.Shell()
+	if err != nil {
+		return stdin, session, err
+	}
+
+	return stdin, session, err
 }
