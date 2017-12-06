@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/chzyer/readline"
-	"github.com/ncode/pretty/message"
 	"github.com/ncode/pretty/sshConn"
 	"github.com/spf13/viper"
 )
@@ -35,7 +34,7 @@ func filterInput(r rune) (rune, bool) {
 
 func Spawn(hostList *sshConn.HostList) {
 	command := make(chan string)
-	go message.Broker(hostList, command)
+	go sshConn.Broker(hostList, command)
 	prompt := "pretty(0)>> "
 
 	rl, err := readline.NewEx(&readline.Config{

@@ -1,20 +1,18 @@
-package message
+package sshConn
 
 import (
 	"fmt"
 	"os"
 	"strings"
 	"sync/atomic"
-
-	"github.com/ncode/pretty/sshConn"
 )
 
 type ProxyWriter struct {
 	file *os.File
-	host *sshConn.Host
+	host *Host
 }
 
-func NewProxyWriter(file *os.File, host *sshConn.Host) *ProxyWriter {
+func NewProxyWriter(file *os.File, host *Host) *ProxyWriter {
 	return &ProxyWriter{
 		file: file,
 		host: host,
@@ -31,15 +29,15 @@ func (w *ProxyWriter) Write(output []byte) (int, error) {
 	return len(output), nil
 }
 
-func worker(host *sshConn.Host, input <-chan string) {
-	connection, err := sshConn.Connection(host.Hostname)
+func worker(host *Host, input <-chan string) {
+	connection, err := Connection(host.Hostname)
 	if err != nil {
 		fmt.Printf("Error connection to host %s: %v\n", host.Hostname, err)
 	} else {
 		atomic.StoreInt32(&host.IsConnected, 1)
 	}
 	for command := range input {
-		session, err := sshConn.Session(connection)
+		session, err := Session(connection)
 		if err != nil {
 			fmt.Printf("Unable to open session: %v\n", err)
 			atomic.StoreInt32(&host.IsConnected, 0)
@@ -53,11 +51,15 @@ func worker(host *sshConn.Host, input <-chan string) {
 		if err != nil {
 			fmt.Println(err)
 		}
+		err = session.Wait()
+		if err != nil {
+			fmt.Println(err)
+		}
 		atomic.StoreInt32(&host.IsWaiting, 0)
 	}
 }
 
-func Broker(hostList *sshConn.HostList, input <-chan string) {
+func Broker(hostList *HostList, input <-chan string) {
 	for _, host := range hostList.Hosts() {
 		host.Channel = make(chan string)
 		go worker(host, host.Channel)
