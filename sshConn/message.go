@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"golang.org/x/crypto/ssh"
 )
 
 type ProxyWriter struct {
@@ -37,7 +38,7 @@ func worker(host *Host, input <-chan string) {
 	} else {
 		atomic.StoreInt32(&host.IsConnected, 1)
 	}
-	stdin, _, err := Session(connection, host)
+	stdin, session, err := Session(connection, host)
 	if err != nil {
 		fmt.Printf("unable to open session: %v\n", err)
 		atomic.StoreInt32(&host.IsConnected, 0)
@@ -46,7 +47,15 @@ func worker(host *Host, input <-chan string) {
 
 	for command := range input {
 		atomic.StoreInt32(&host.IsWaiting, 1)
-		fmt.Fprint(stdin, string(command) + "\n")
+		// TODO: This is unfortunately not supported by OpenSSH yet.
+		//  ref: https://github.com/golang/go/issues/16597
+		//  ref: https://bugzilla.mindrot.org/show_bug.cgi?id=1424
+		//  I will need to look for a less classy solution :(
+		if command == "ˆC" {
+			session.Signal(ssh.SIGINT)
+		} else {
+			fmt.Fprint(stdin, fmt.Sprintf("%s\n", command))
+		}
 		atomic.StoreInt32(&host.IsWaiting, 0)
 	}
 }
