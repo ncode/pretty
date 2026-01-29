@@ -1,0 +1,31 @@
+services:
+  sshd1:
+    build:
+      context: ./docker/sshd
+    hostname: sshd1
+    ports:
+      - "2221:22"
+    env_file:
+      - ./.pretty-test/sshd.env
+    volumes:
+      - ./.pretty-test/authorized_keys:/authorized_keys:ro
+  sshd2:
+    build:
+      context: ./docker/sshd
+    hostname: sshd2
+    ports:
+      - "2222:22"
+    env_file:
+      - ./.pretty-test/sshd.env
+    volumes:
+      - ./.pretty-test/authorized_keys:/authorized_keys:ro
+  sshd3:
+    build:
+      context: ./docker/sshd
+    hostname: sshd3
+    ports:
+      - "2223:22"
+    env_file:
+      - ./.pretty-test/sshd.env
+    volumes:
+      - ./.pretty-test/authorized_keys:/authorized_keys:ro
