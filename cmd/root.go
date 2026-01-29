@@ -19,12 +19,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fatih/color"
 	homedir "github.com/mitchellh/go-homedir"
-	"github.com/ncode/pretty/shell"
-	"github.com/ncode/pretty/sshConn"
+	"github.com/ncode/pretty/internal/shell"
+	"github.com/ncode/pretty/internal/sshConn"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -50,11 +51,24 @@ usage:
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		if hostGroup != "" && len(args) > 1 {
-			toAppend := viper.GetStringSlice(fmt.Sprintf("groups.%s", hostGroup))
-			args = append(args, toAppend...)
-		} else if hostGroup != "" && len(args) < 1 {
-			args = viper.GetStringSlice(fmt.Sprintf("groups.%s", hostGroup))
+		argsLen := len(args)
+		hostSpecs, err := parseArgsHosts(args)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		if hostGroup != "" {
+			groupSpecs, err := parseGroupSpecs(viper.Get(fmt.Sprintf("groups.%s", hostGroup)), hostGroup)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			if argsLen > 1 {
+				hostSpecs = append(hostSpecs, groupSpecs...)
+			} else if argsLen < 1 {
+				hostSpecs = groupSpecs
+			}
 		}
 
 		if hostsFile != "" {
@@ -63,12 +77,12 @@ usage:
 				fmt.Printf("unable to read hostsFile: %v\n", err)
 				os.Exit(1)
 			}
-			for _, host := range strings.Split(string(data), "\n") {
-				if host == "" {
-					continue
-				}
-				args = append(args, strings.TrimSpace(host))
+			fileSpecs, err := parseHostsFile(data)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
 			}
+			hostSpecs = append(hostSpecs, fileSpecs...)
 		}
 
 		var colors = []color.Attribute{
@@ -88,15 +102,68 @@ usage:
 			color.FgHiWhite,
 		}
 
-		for len(colors) <= len(args) {
+		for len(colors) <= len(hostSpecs) {
 			colors = append(colors, colors...)
 		}
 
+		userConfigPath := ""
+		if home, err := os.UserHomeDir(); err == nil {
+			userConfigPath = filepath.Join(home, ".ssh", "config")
+		}
+		resolver, err := sshConn.LoadSSHConfig(sshConn.SSHConfigPaths{
+			User:   userConfigPath,
+			System: "/etc/ssh/ssh_config",
+		})
+		if err != nil {
+			fmt.Printf("unable to load ssh config: %v\n", err)
+			os.Exit(1)
+		}
+
+		globalUser := strings.TrimSpace(viper.GetString("username"))
+
 		hostList := sshConn.NewHostList()
-		for pos, hostname := range args {
+		for pos, spec := range hostSpecs {
+			resolveSpec := sshConn.HostSpec{
+				Alias:   spec.Host,
+				Host:    spec.Host,
+				Port:    spec.Port,
+				User:    spec.User,
+				PortSet: spec.PortSet,
+				UserSet: spec.UserSet,
+			}
+			if !resolveSpec.UserSet && globalUser != "" {
+				resolveSpec.User = globalUser
+				resolveSpec.UserSet = true
+			}
+			resolved, err := resolver.ResolveHost(resolveSpec, "")
+			if err != nil {
+				fmt.Printf("unable to resolve host %q: %v\n", spec.Host, err)
+				os.Exit(1)
+			}
+			jumps := make([]sshConn.ResolvedHost, 0, len(resolved.ProxyJump))
+			for _, jumpAlias := range resolved.ProxyJump {
+				jumpSpec := sshConn.HostSpec{Alias: jumpAlias, Host: jumpAlias}
+				if globalUser != "" {
+					jumpSpec.User = globalUser
+					jumpSpec.UserSet = true
+				}
+				jumpResolved, err := resolver.ResolveHost(jumpSpec, "")
+				if err != nil {
+					fmt.Printf("unable to resolve jump host %q: %v\n", jumpAlias, err)
+					os.Exit(1)
+				}
+				jumps = append(jumps, jumpResolved)
+			}
+			displayName := hostDisplayName(HostSpec{Host: resolved.Host, Port: resolved.Port})
 			host := &sshConn.Host{
-				Hostname: hostname,
-				Color:    color.New(colors[pos%len(colors)]),
+				Hostname:      displayName,
+				Alias:         resolved.Alias,
+				Host:          resolved.Host,
+				Port:          resolved.Port,
+				User:          resolved.User,
+				IdentityFiles: resolved.IdentityFiles,
+				ProxyJump:     jumps,
+				Color:         color.New(colors[pos%len(colors)]),
 			}
 			hostList.AddHost(host)
 		}
@@ -116,8 +183,10 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pretty.yaml)")
-	RootCmd.PersistentFlags().StringVarP(&hostsFile, "hostsFile", "H", "", "hosts file to be used instead of the args via stdout (one host per line)")
+	RootCmd.PersistentFlags().StringVarP(&hostsFile, "hostsFile", "H", "", "hosts file to be used instead of the args via stdout (one host per line, format: host or host:port)")
 	RootCmd.PersistentFlags().StringVarP(&hostGroup, "hostGroup", "G", "", "group of hosts to be loaded from the config file")
+	RootCmd.PersistentFlags().String("prompt", "", "prompt to display in the interactive shell")
+	_ = viper.BindPFlag("prompt", RootCmd.PersistentFlags().Lookup("prompt"))
 }
 
 // initConfig reads in config file and ENV variables if set.

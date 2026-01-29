@@ -1,0 +1,22 @@
+name: Test and coverage
+
+on: [push, pull_request]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-go@v6.2.0
+        with:
+          go-version: '1.25'
+      - name: Run coverage
+        run: go env -w GOTOOLCHAIN=go1.25.0+auto && go test -coverpkg=./... ./... -race -coverprofile=coverage.out -covermode=atomic
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
