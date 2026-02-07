@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	sshconfig "github.com/kevinburke/ssh_config"
+	sshconfig "github.com/ncode/ssh_config"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -142,19 +142,21 @@ func (r *SSHConfigResolver) ResolveHost(spec HostSpec, fallbackUser string) (Res
 
 func (r *SSHConfigResolver) getValue(alias, key string) (string, error) {
 	if r.user != nil {
-		val, err := r.user.Get(alias, key)
+		result, err := r.resolve(r.user, alias)
 		if err != nil {
 			return "", err
 		}
+		val := result.Get(key)
 		if strings.TrimSpace(val) != "" {
 			return val, nil
 		}
 	}
 	if r.system != nil {
-		val, err := r.system.Get(alias, key)
+		result, err := r.resolve(r.system, alias)
 		if err != nil {
 			return "", err
 		}
+		val := result.Get(key)
 		if strings.TrimSpace(val) != "" {
 			return val, nil
 		}
@@ -165,20 +167,40 @@ func (r *SSHConfigResolver) getValue(alias, key string) (string, error) {
 func (r *SSHConfigResolver) getAllValues(alias, key string) ([]string, error) {
 	values := []string{}
 	if r.user != nil {
-		vals, err := r.user.GetAll(alias, key)
+		result, err := r.resolve(r.user, alias)
 		if err != nil {
 			return nil, err
 		}
-		values = append(values, vals...)
+		vals := result.GetAll(key)
+		for _, val := range vals {
+			if strings.TrimSpace(val) == "" {
+				continue
+			}
+			values = append(values, val)
+		}
 	}
 	if r.system != nil {
-		vals, err := r.system.GetAll(alias, key)
+		result, err := r.resolve(r.system, alias)
 		if err != nil {
 			return nil, err
 		}
-		values = append(values, vals...)
+		vals := result.GetAll(key)
+		for _, val := range vals {
+			if strings.TrimSpace(val) == "" {
+				continue
+			}
+			values = append(values, val)
+		}
 	}
 	return values, nil
+}
+
+func (r *SSHConfigResolver) resolve(cfg *sshconfig.Config, alias string) (*sshconfig.Result, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	ctx := sshconfig.Context{HostArg: alias, OriginalHost: alias, LocalUser: currentUser()}
+	return cfg.Resolve(ctx)
 }
 
 func currentUser() string {
