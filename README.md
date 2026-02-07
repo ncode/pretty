@@ -57,6 +57,7 @@ Host key verification:
 Notes:
 - Group entries must use the wrapper schema with a `hosts` list.
 - Auth uses your SSH agent (`SSH_AUTH_SOCK`) and IdentityFile entries from SSH config. Load keys with `ssh-add`.
+- Host resolution follows OpenSSH-style `Host` and `Match` evaluation from your SSH config.
 
 ## Host specs
 Accepted formats:
