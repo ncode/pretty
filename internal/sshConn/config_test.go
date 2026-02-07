@@ -155,6 +155,61 @@ func TestResolveProxyJumpChain(t *testing.T) {
 	}
 }
 
+func TestResolveHostAppliesMatchValues(t *testing.T) {
+	cfg := "Host web\n  HostName web.internal\nMatch host=web.internal\n  User matched\n  Port 2201\n"
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "web"}, "fallback")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.User != "matched" {
+		t.Fatalf("expected match user, got %+v", resolved)
+	}
+	if resolved.Port != 2201 {
+		t.Fatalf("expected match port, got %+v", resolved)
+	}
+}
+
+func TestResolveHostMatchNonMatchingBlockDoesNotApply(t *testing.T) {
+	cfg := "Host web\n  User host-user\nMatch host=db\n  User match-user\n"
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "web"}, "fallback")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.User != "host-user" {
+		t.Fatalf("unexpected resolved user: %+v", resolved)
+	}
+}
+
+func TestResolveHostExplicitOverridesMatch(t *testing.T) {
+	cfg := "Host web\n  User base\n  Port 2222\nMatch host=web\n  User matched\n  Port 2201\n"
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spec := HostSpec{Host: "web", User: "explicit", UserSet: true, Port: 2022, PortSet: true}
+	resolved, err := resolver.ResolveHost(spec, "fallback")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.User != "explicit" || resolved.Port != 2022 {
+		t.Fatalf("explicit values should win, got %+v", resolved)
+	}
+}
+
 func startTestAgent(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "pretty-agent")
