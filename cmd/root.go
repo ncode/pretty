@@ -50,19 +50,17 @@ usage:
 		}
 		return nil
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		argsLen := len(args)
 		hostSpecs, err := parseArgsHosts(args)
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			return err
 		}
 
 		if hostGroup != "" {
 			groupSpecs, err := parseGroupSpecs(viper.Get(fmt.Sprintf("groups.%s", hostGroup)), hostGroup)
 			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
+				return err
 			}
 			if argsLen > 1 {
 				hostSpecs = append(hostSpecs, groupSpecs...)
@@ -74,13 +72,11 @@ usage:
 		if hostsFile != "" {
 			data, err := ioutil.ReadFile(hostsFile)
 			if err != nil {
-				fmt.Printf("unable to read hostsFile: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("unable to read hostsFile: %w", err)
 			}
 			fileSpecs, err := parseHostsFile(data)
 			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
+				return err
 			}
 			hostSpecs = append(hostSpecs, fileSpecs...)
 		}
@@ -115,8 +111,7 @@ usage:
 			System: "/etc/ssh/ssh_config",
 		})
 		if err != nil {
-			fmt.Printf("unable to load ssh config: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("unable to load ssh config: %w", err)
 		}
 
 		globalUser := strings.TrimSpace(viper.GetString("username"))
@@ -137,8 +132,7 @@ usage:
 			}
 			resolved, err := resolver.ResolveHost(resolveSpec, "")
 			if err != nil {
-				fmt.Printf("unable to resolve host %q: %v\n", spec.Host, err)
-				os.Exit(1)
+				return fmt.Errorf("unable to resolve host %q: %w", spec.Host, err)
 			}
 			jumps := make([]sshConn.ResolvedHost, 0, len(resolved.ProxyJump))
 			for _, jumpAlias := range resolved.ProxyJump {
@@ -149,8 +143,7 @@ usage:
 				}
 				jumpResolved, err := resolver.ResolveHost(jumpSpec, "")
 				if err != nil {
-					fmt.Printf("unable to resolve jump host %q: %v\n", jumpAlias, err)
-					os.Exit(1)
+					return fmt.Errorf("unable to resolve jump host %q: %w", jumpAlias, err)
 				}
 				jumps = append(jumps, jumpResolved)
 			}
@@ -168,16 +161,14 @@ usage:
 			hostList.AddHost(host)
 		}
 		shell.Spawn(hostList)
+		return nil
 	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	if err := RootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+func Execute() error {
+	return RootCmd.Execute()
 }
 
 func init() {
