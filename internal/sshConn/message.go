@@ -6,6 +6,12 @@ import (
 	"sync/atomic"
 )
 
+var (
+	connectionFunc = Connection
+	sessionFunc    = Session
+	workerRunner   = worker
+)
+
 type ProxyWriter struct {
 	events chan<- OutputEvent
 	host   *Host
@@ -62,7 +68,7 @@ func emitSystem(events chan<- OutputEvent, host *Host, line string) {
 }
 
 func worker(host *Host, input <-chan CommandRequest, events chan<- OutputEvent) {
-	connection, err := Connection(host)
+	connection, err := connectionFunc(host)
 	if err != nil {
 		emitSystem(events, host, fmt.Sprintf("error connection to host %s: %v", host.Hostname, err))
 		return
@@ -72,7 +78,7 @@ func worker(host *Host, input <-chan CommandRequest, events chan<- OutputEvent) 
 	stdoutWriter := NewProxyWriter(events, host, 0)
 	stderrWriter := NewProxyWriter(events, host, 0)
 	stderrWriter.system = true
-	stdin, session, err := Session(connection, host, stdoutWriter, stderrWriter)
+	stdin, session, err := sessionFunc(connection, host, stdoutWriter, stderrWriter)
 	if err != nil {
 		emitSystem(events, host, fmt.Sprintf("unable to open session: %v", err))
 		atomic.StoreInt32(&host.IsConnected, 0)
@@ -100,7 +106,7 @@ func worker(host *Host, input <-chan CommandRequest, events chan<- OutputEvent) 
 func Broker(hostList *HostList, input <-chan CommandRequest, events chan<- OutputEvent) {
 	for _, host := range hostList.Hosts() {
 		host.Channel = make(chan CommandRequest)
-		go worker(host, host.Channel, events)
+		go workerRunner(host, host.Channel, events)
 	}
 
 	for request := range input {

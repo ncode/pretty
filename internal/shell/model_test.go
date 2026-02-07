@@ -487,3 +487,60 @@ func BenchmarkAppendOutputs(b *testing.B) {
 		m.appendOutputs(lines...)
 	}
 }
+
+func TestConnectedHosts(t *testing.T) {
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1", IsConnected: 1})
+	hostList.AddHost(&sshConn.Host{Hostname: "host2", IsConnected: 0})
+
+	hosts := connectedHosts(hostList)
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 connected host, got %d", len(hosts))
+	}
+	if hosts[0].Hostname != "host1" {
+		t.Fatalf("unexpected host: %s", hosts[0].Hostname)
+	}
+}
+
+func TestConnectedHostsNilList(t *testing.T) {
+	if got := connectedHosts(nil); got != nil {
+		t.Fatalf("expected nil hosts, got %#v", got)
+	}
+}
+
+func TestHostnames(t *testing.T) {
+	hosts := []*sshConn.Host{{Hostname: "alpha"}, {Hostname: "beta"}}
+	got := hostnames(hosts)
+	if len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Fatalf("unexpected hostnames: %#v", got)
+	}
+}
+
+func TestInitReturnsNilCmdWithoutEvents(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	if cmd := m.Init(); cmd != nil {
+		t.Fatalf("expected nil cmd when events channel is nil")
+	}
+}
+
+func TestInitReturnsOutputBatchFromEvents(t *testing.T) {
+	events := make(chan sshConn.OutputEvent, 2)
+	m := initialModel(nil, nil, events)
+
+	events <- sshConn.OutputEvent{Hostname: "h1", Line: "one"}
+	events <- sshConn.OutputEvent{Hostname: "h1", Line: "two"}
+	close(events)
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatalf("expected non-nil cmd")
+	}
+	msg := cmd()
+	got, ok := msg.(outputMsg)
+	if !ok {
+		t.Fatalf("expected outputMsg, got %T", msg)
+	}
+	if len(got.events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(got.events))
+	}
+}

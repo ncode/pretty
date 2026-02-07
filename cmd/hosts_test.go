@@ -232,3 +232,52 @@ func TestPromptFlagOverridesConfig(t *testing.T) {
 		t.Fatalf("expected CLI prompt to override config, got %q", got)
 	}
 }
+
+func TestParsePortValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   interface{}
+		want    int
+		wantErr bool
+	}{
+		{name: "int", input: 22, want: 22},
+		{name: "int64", input: int64(2222), want: 2222},
+		{name: "float64 integer", input: float64(2200), want: 2200},
+		{name: "string", input: "2022", want: 2022},
+		{name: "float64 non integer", input: float64(22.5), wantErr: true},
+		{name: "string invalid", input: "abc", wantErr: true},
+		{name: "out of range", input: 70000, wantErr: true},
+		{name: "invalid type", input: true, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parsePortValue(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expected %d, got %d", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestValidatePort(t *testing.T) {
+	if got, err := validatePort(22); err != nil || got != 22 {
+		t.Fatalf("expected port 22, got %d err=%v", got, err)
+	}
+
+	if _, err := validatePort(0); err == nil {
+		t.Fatalf("expected out of range error")
+	}
+	if _, err := validatePort(65536); err == nil {
+		t.Fatalf("expected out of range error")
+	}
+}
