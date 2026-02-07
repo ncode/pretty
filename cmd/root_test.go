@@ -237,3 +237,88 @@ func TestExecuteReturnsErrorWhenResolveJumpFails(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestExecuteReturnsNilOnSuccessfulSetup(t *testing.T) {
+	prevHostGroup := hostGroup
+	prevHostsFile := hostsFile
+	prevLoad := loadSSHConfigFunc
+	prevSpawn := spawnShellFunc
+	t.Cleanup(func() {
+		hostGroup = prevHostGroup
+		hostsFile = prevHostsFile
+		loadSSHConfigFunc = prevLoad
+		spawnShellFunc = prevSpawn
+		RootCmd.SetArgs(nil)
+	})
+
+	loadSSHConfigFunc = func(paths sshConn.SSHConfigPaths) (*sshConn.SSHConfigResolver, error) {
+		return &sshConn.SSHConfigResolver{}, nil
+	}
+	spawnCalled := false
+	spawnShellFunc = func(hostList *sshConn.HostList) {
+		spawnCalled = true
+	}
+
+	hostGroup = ""
+	hostsFile = ""
+	RootCmd.SetArgs([]string{"host1"})
+
+	err := Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !spawnCalled {
+		t.Fatalf("expected spawn to be called")
+	}
+}
+
+func TestExecuteAppliesGlobalUserToHostAndJumpSpecs(t *testing.T) {
+	prevHostGroup := hostGroup
+	prevHostsFile := hostsFile
+	prevLoad := loadSSHConfigFunc
+	prevResolve := resolveHostFunc
+	prevSpawn := spawnShellFunc
+	prevUsername := viper.Get("username")
+	t.Cleanup(func() {
+		hostGroup = prevHostGroup
+		hostsFile = prevHostsFile
+		loadSSHConfigFunc = prevLoad
+		resolveHostFunc = prevResolve
+		spawnShellFunc = prevSpawn
+		viper.Set("username", prevUsername)
+		RootCmd.SetArgs(nil)
+	})
+
+	loadSSHConfigFunc = func(paths sshConn.SSHConfigPaths) (*sshConn.SSHConfigResolver, error) {
+		return &sshConn.SSHConfigResolver{}, nil
+	}
+	spawnShellFunc = func(hostList *sshConn.HostList) {}
+	viper.Set("username", "deploy")
+
+	call := 0
+	resolveHostFunc = func(resolver *sshConn.SSHConfigResolver, spec sshConn.HostSpec, fallbackUser string) (sshConn.ResolvedHost, error) {
+		call++
+		if call == 1 {
+			if !spec.UserSet || spec.User != "deploy" {
+				t.Fatalf("expected global user on host resolve, got user=%q userSet=%v", spec.User, spec.UserSet)
+			}
+			return sshConn.ResolvedHost{Alias: spec.Alias, Host: spec.Host, Port: 22, User: spec.User, ProxyJump: []string{"jump1"}}, nil
+		}
+		if !spec.UserSet || spec.User != "deploy" {
+			t.Fatalf("expected global user on jump resolve, got user=%q userSet=%v", spec.User, spec.UserSet)
+		}
+		return sshConn.ResolvedHost{Alias: spec.Alias, Host: spec.Host, Port: 22, User: spec.User}, nil
+	}
+
+	hostGroup = ""
+	hostsFile = ""
+	RootCmd.SetArgs([]string{"host1"})
+
+	err := Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if call != 2 {
+		t.Fatalf("expected 2 resolve calls, got %d", call)
+	}
+}

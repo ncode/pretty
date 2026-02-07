@@ -40,6 +40,8 @@ var resolveHostFunc = func(resolver *sshConn.SSHConfigResolver, spec sshConn.Hos
 	return resolver.ResolveHost(spec, fallbackUser)
 }
 
+var spawnShellFunc = shell.Spawn
+
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "pretty",
@@ -166,7 +168,7 @@ usage:
 			}
 			hostList.AddHost(host)
 		}
-		shell.Spawn(hostList)
+		spawnShellFunc(hostList)
 		return nil
 	},
 }
