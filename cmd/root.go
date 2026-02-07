@@ -34,6 +34,12 @@ var cfgFile string
 var hostsFile string
 var hostGroup string
 
+var loadSSHConfigFunc = sshConn.LoadSSHConfig
+
+var resolveHostFunc = func(resolver *sshConn.SSHConfigResolver, spec sshConn.HostSpec, fallbackUser string) (sshConn.ResolvedHost, error) {
+	return resolver.ResolveHost(spec, fallbackUser)
+}
+
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "pretty",
@@ -106,7 +112,7 @@ usage:
 		if home, err := os.UserHomeDir(); err == nil {
 			userConfigPath = filepath.Join(home, ".ssh", "config")
 		}
-		resolver, err := sshConn.LoadSSHConfig(sshConn.SSHConfigPaths{
+		resolver, err := loadSSHConfigFunc(sshConn.SSHConfigPaths{
 			User:   userConfigPath,
 			System: "/etc/ssh/ssh_config",
 		})
@@ -130,7 +136,7 @@ usage:
 				resolveSpec.User = globalUser
 				resolveSpec.UserSet = true
 			}
-			resolved, err := resolver.ResolveHost(resolveSpec, "")
+			resolved, err := resolveHostFunc(resolver, resolveSpec, "")
 			if err != nil {
 				return fmt.Errorf("unable to resolve host %q: %w", spec.Host, err)
 			}
@@ -141,7 +147,7 @@ usage:
 					jumpSpec.User = globalUser
 					jumpSpec.UserSet = true
 				}
-				jumpResolved, err := resolver.ResolveHost(jumpSpec, "")
+				jumpResolved, err := resolveHostFunc(resolver, jumpSpec, "")
 				if err != nil {
 					return fmt.Errorf("unable to resolve jump host %q: %w", jumpAlias, err)
 				}
