@@ -3,7 +3,7 @@ module github.com/ncode/pretty
 go 1.26
 
 require (
-	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbles/v2 v2.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/fatih/color v1.18.0
 	github.com/mitchellh/go-homedir v1.1.0
