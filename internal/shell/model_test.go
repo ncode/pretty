@@ -475,6 +475,257 @@ func pressKey(m model, key string) model {
 	updated, _ := m.Update(msg)
 	return updated.(model)
 }
+func TestAsyncNoConnectedHosts(t *testing.T) {
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1", IsConnected: 0})
+
+	m := initialModel(hostList, nil, nil)
+	m.input.SetValue(":async uptime")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 || lines[0] != "no connected hosts" {
+		t.Fatalf("expected [no connected hosts], got %#v", lines)
+	}
+}
+
+func TestStatusSpecificJobNotFound(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	m.input.SetValue(":status 999")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 || lines[0] != "job 999 not found" {
+		t.Fatalf("expected [job 999 not found], got %#v", lines)
+	}
+}
+
+func TestStatusNoJobs(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	m.input.SetValue(":status")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 || lines[0] != "no jobs recorded" {
+		t.Fatalf("expected [no jobs recorded], got %#v", lines)
+	}
+}
+
+func TestOutputMsgSystemEvent(t *testing.T) {
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1"})
+
+	m := initialModel(hostList, nil, nil)
+	msg := outputMsg{events: []sshConn.OutputEvent{
+		{Hostname: "host1", Line: "system msg", System: true},
+	}}
+	updated, _ := m.Update(msg)
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d: %#v", len(lines), lines)
+	}
+	if lines[0] != "system msg" {
+		t.Fatalf("expected %q without hostname prefix, got %q", "system msg", lines[0])
+	}
+}
+
+func TestCommandRunNoConnectedHosts(t *testing.T) {
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1", IsConnected: 0})
+
+	m := initialModel(hostList, nil, nil)
+	m.input.SetValue("uptime")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 || lines[0] != "no connected hosts" {
+		t.Fatalf("expected [no connected hosts], got %#v", lines)
+	}
+}
+
+func TestRunAsyncEmptyHostsReturnsNil(t *testing.T) {
+	manager := jobs.NewManager()
+	events := make(chan sshConn.OutputEvent, 1)
+	cmd := runAsync(1, "uptime", nil, events, manager)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for empty hosts")
+	}
+}
+
+func TestRunAsyncStubSuccessAndFailure(t *testing.T) {
+	prev := runCommandFunc
+	t.Cleanup(func() { runCommandFunc = prev })
+
+	runCommandFunc = func(host *sshConn.Host, command string, jobID int, events chan<- sshConn.OutputEvent) (int, error) {
+		if host.Hostname == "host1" {
+			return 0, nil
+		}
+		return 1, fmt.Errorf("failed")
+	}
+
+	manager := jobs.NewManager()
+	hosts := []*sshConn.Host{
+		{Hostname: "host1", IsConnected: 1},
+		{Hostname: "host2", IsConnected: 1},
+	}
+	hostnames := []string{"host1", "host2"}
+	job := manager.CreateJob(jobs.JobTypeAsync, "uptime", hostnames)
+	for _, h := range hosts {
+		manager.MarkHostRunning(job.ID, h.Hostname)
+	}
+
+	events := make(chan sshConn.OutputEvent, 10)
+	cmd := runAsync(job.ID, "uptime", hosts, events, manager)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	cmd() // execute the command, spawns goroutines
+
+	// Wait for goroutines to complete
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := manager.Job(job.ID)
+		host1 := snap.Hosts["host1"]
+		host2 := snap.Hosts["host2"]
+		if (host1.State == jobs.HostSuccess || host1.State == jobs.HostFailed) &&
+			(host2.State == jobs.HostSuccess || host2.State == jobs.HostFailed) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for hosts to complete")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	snap := manager.Job(job.ID)
+	if snap.Hosts["host1"].State != jobs.HostSuccess {
+		t.Fatalf("expected host1 succeeded, got %v", snap.Hosts["host1"].State)
+	}
+	if snap.Hosts["host1"].ExitCode != 0 {
+		t.Fatalf("expected host1 exit 0, got %d", snap.Hosts["host1"].ExitCode)
+	}
+	if snap.Hosts["host2"].State != jobs.HostFailed {
+		t.Fatalf("expected host2 failed, got %v", snap.Hosts["host2"].State)
+	}
+	if snap.Hosts["host2"].ExitCode != 1 {
+		t.Fatalf("expected host2 exit 1, got %d", snap.Hosts["host2"].ExitCode)
+	}
+}
+
+func TestCommandRunWithConnectedHosts(t *testing.T) {
+	broker := make(chan sshConn.CommandRequest, 1)
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1", IsConnected: 1})
+
+	m := initialModel(hostList, broker, nil)
+	m.input.SetValue("uptime")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+
+	// Should have created a normal job
+	normalJobs := um.jobs.NormalJobs()
+	if len(normalJobs) != 1 {
+		t.Fatalf("expected 1 normal job, got %d", len(normalJobs))
+	}
+	if normalJobs[0].Command != "uptime" {
+		t.Fatalf("expected command 'uptime', got %q", normalJobs[0].Command)
+	}
+
+	// Execute the command to send to broker
+	if cmd != nil {
+		cmd()
+	}
+	req := readRequest(t, broker)
+	if req.Kind != sshConn.CommandKindRun {
+		t.Fatalf("expected run kind, got %v", req.Kind)
+	}
+	if !strings.Contains(req.Command, "uptime") {
+		t.Fatalf("expected command to contain 'uptime', got %q", req.Command)
+	}
+}
+
+func TestOutputMsgSystemSentinelPrefix(t *testing.T) {
+	hostList := sshConn.NewHostList()
+	hostList.AddHost(&sshConn.Host{Hostname: "host1"})
+
+	m := initialModel(hostList, nil, nil)
+	job := m.jobs.CreateJob(jobs.JobTypeNormal, "whoami", []string{"host1"})
+	m.jobs.MarkHostRunning(job.ID, "host1")
+
+	// System event with sentinel (covers the system sentinel prefix branch)
+	line := "error" + jobs.SentinelFor(job.ID) + ":1"
+	updated, _ := m.Update(outputMsg{events: []sshConn.OutputEvent{
+		{JobID: job.ID, Hostname: "host1", Line: line, System: true},
+	}})
+	um := updated.(model)
+
+	lines := um.output.Lines()
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d: %#v", len(lines), lines)
+	}
+	if lines[0] != "error" {
+		t.Fatalf("expected system prefix 'error', got %q", lines[0])
+	}
+}
+
+func TestWindowSizeMsgZeroHeight(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 0})
+	um := updated.(model)
+	if um.viewport.Height() != 0 {
+		t.Fatalf("expected viewport height 0, got %d", um.viewport.Height())
+	}
+}
+
+func TestListCommandNoHosts(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	m.input.SetValue(":list")
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+	lines := um.output.Lines()
+	if len(lines) != 1 || lines[0] != "no hosts configured" {
+		t.Fatalf("expected [no hosts configured], got %#v", lines)
+	}
+}
+
+func TestEmptyCommandIsNoop(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	m.input.SetValue("")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	um := updated.(model)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for empty command")
+	}
+	if um.output.Lines() != nil {
+		t.Fatalf("expected no output, got %#v", um.output.Lines())
+	}
+}
+
+func TestAsyncEmptyArgIsNoop(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	m.input.SetValue(":async")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	_ = updated.(model)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for :async with no arg")
+	}
+}
+
+func TestSendCommandNilBroker(t *testing.T) {
+	cmd := sendCommand(nil, sshConn.CommandRequest{Command: "test"})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for nil broker")
+	}
+}
+
 func BenchmarkAppendOutputs(b *testing.B) {
 	lines := make([]string, 0, 1000)
 	for i := 0; i < 1000; i++ {
@@ -535,6 +786,32 @@ func TestInitReturnsNilCmdWithoutEvents(t *testing.T) {
 	m := initialModel(nil, nil, nil)
 	if cmd := m.Init(); cmd != nil {
 		t.Fatalf("expected nil cmd when events channel is nil")
+	}
+}
+
+func TestColorizeHostLineEmptyHostname(t *testing.T) {
+	hostColors := map[string]*color.Color{"host1": color.New(color.FgRed)}
+	line := "some output line"
+	got := colorizeHostLine(hostColors, "", line)
+	if got != line {
+		t.Fatalf("expected unmodified line %q, got %q", line, got)
+	}
+}
+
+func TestColorizeHostLineNilColors(t *testing.T) {
+	line := "some output line"
+	got := colorizeHostLine(nil, "host1", line)
+	if got != line {
+		t.Fatalf("expected unmodified line %q, got %q", line, got)
+	}
+}
+
+func TestColorizeHostLineMissingHost(t *testing.T) {
+	hostColors := map[string]*color.Color{"host2": color.New(color.FgRed)}
+	line := "some output line"
+	got := colorizeHostLine(hostColors, "host1", line)
+	if got != line {
+		t.Fatalf("expected unmodified line %q, got %q", line, got)
 	}
 }
 

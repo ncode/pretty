@@ -1,6 +1,12 @@
 package sshConn
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/spf13/viper"
+)
 
 func TestDialAddressUsesPort(t *testing.T) {
 	host := &Host{Host: "localhost", Port: 2222}
@@ -15,6 +21,60 @@ func TestResolvedAddressUsesPort(t *testing.T) {
 	got := resolvedAddress(host)
 	if got != "example.com:2200" {
 		t.Fatalf("unexpected address: %s", got)
+	}
+}
+
+func TestHostKeyCallbackWithViperKnownHosts(t *testing.T) {
+	dir := t.TempDir()
+	khPath := filepath.Join(dir, "known_hosts")
+	if err := os.WriteFile(khPath, []byte{}, 0o600); err != nil {
+		t.Fatalf("failed to write known_hosts: %v", err)
+	}
+
+	viper.Set("known_hosts", khPath)
+	t.Cleanup(func() { viper.Set("known_hosts", "") })
+
+	cb := hostKeyCallback()
+	if cb == nil {
+		t.Fatal("expected non-nil callback with valid known_hosts via viper")
+	}
+}
+
+func TestHostKeyCallbackFallbackInsecure(t *testing.T) {
+	viper.Set("known_hosts", "")
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	// No .ssh/known_hosts in tmpHome, so it should fall back to insecure
+	cb := hostKeyCallback()
+	if cb == nil {
+		t.Fatal("expected non-nil insecure callback")
+	}
+}
+
+func TestHostKeyCallbackFallbackToSSHDir(t *testing.T) {
+	viper.Set("known_hosts", "")
+
+	tmpHome := t.TempDir()
+	sshDir := filepath.Join(tmpHome, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("failed to create .ssh dir: %v", err)
+	}
+	khPath := filepath.Join(sshDir, "known_hosts")
+	if err := os.WriteFile(khPath, []byte{}, 0o600); err != nil {
+		t.Fatalf("failed to write known_hosts: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	cb := hostKeyCallback()
+	if cb == nil {
+		t.Fatal("expected non-nil callback from ~/.ssh/known_hosts")
 	}
 }
 

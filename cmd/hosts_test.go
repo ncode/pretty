@@ -281,3 +281,134 @@ func TestValidatePort(t *testing.T) {
 		t.Fatalf("expected out of range error")
 	}
 }
+
+func TestParseGroupSpecsMapInterfaceInterface(t *testing.T) {
+	raw := map[interface{}]interface{}{
+		"hosts": []interface{}{"host1"},
+	}
+	specs, err := parseGroupSpecs(raw, "alt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []HostSpec{
+		{Host: "host1", Port: defaultPort},
+	}
+	if !reflect.DeepEqual(specs, want) {
+		t.Fatalf("unexpected specs: %+v", specs)
+	}
+}
+
+func TestParseGroupSpecsInvalidKeyType(t *testing.T) {
+	raw := map[interface{}]interface{}{
+		42: "val",
+	}
+	_, err := parseGroupSpecs(raw, "badkey")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid key type") {
+		t.Fatalf("expected invalid key type error, got %v", err)
+	}
+}
+
+func TestParseGroupSpecsEmptyHostsList(t *testing.T) {
+	raw := map[string]interface{}{
+		"hosts": []interface{}{},
+	}
+	specs, err := parseGroupSpecs(raw, "empty")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if specs != nil {
+		t.Fatalf("expected nil, got %+v", specs)
+	}
+}
+
+func TestParseGroupSpecsNonStringHostEntry(t *testing.T) {
+	raw := map[string]interface{}{
+		"hosts": []interface{}{42},
+	}
+	_, err := parseGroupSpecs(raw, "numhost")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "must be a string") {
+		t.Fatalf("expected 'must be a string' error, got %v", err)
+	}
+}
+
+func TestParseGroupSpecsHostsNotAList(t *testing.T) {
+	raw := map[string]interface{}{
+		"hosts": "not-a-list",
+	}
+	_, err := parseGroupSpecs(raw, "badlist")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "hosts must be a list") {
+		t.Fatalf("expected 'hosts must be a list' error, got %v", err)
+	}
+}
+
+func TestParseGroupSpecsNilReturnsNil(t *testing.T) {
+	specs, err := parseGroupSpecs(nil, "nothing")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if specs != nil {
+		t.Fatalf("expected nil, got %+v", specs)
+	}
+}
+
+func TestParseHostSpecUserAtEmptyHost(t *testing.T) {
+	_, err := parseHostSpec("user@")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid user@host") {
+		t.Fatalf("expected 'invalid user@host' error, got %v", err)
+	}
+}
+
+func TestParseHostSpecIPv6WithPort(t *testing.T) {
+	got, err := parseHostSpec("[::1]:22")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := HostSpec{Host: "::1", Port: 22, PortSet: true}
+	if got != want {
+		t.Fatalf("expected %+v, got %+v", want, got)
+	}
+}
+
+func TestParseHostSpecIPv6NoBrackets(t *testing.T) {
+	got, err := parseHostSpec("2001:db8::1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := HostSpec{Host: "2001:db8::1", Port: defaultPort}
+	if got != want {
+		t.Fatalf("expected %+v, got %+v", want, got)
+	}
+}
+
+func TestParseHostSpecIPv6BracketBadPort(t *testing.T) {
+	_, err := parseHostSpec("[::1]:bad")
+	if err == nil {
+		t.Fatal("expected error for bad port in bracketed IPv6")
+	}
+}
+
+func TestParseHostSpecIPv6BracketBadFormat(t *testing.T) {
+	_, err := parseHostSpec("[::1")
+	if err == nil {
+		t.Fatal("expected error for malformed bracketed IPv6")
+	}
+}
+
+func TestParseHostSpecColonEmptyHost(t *testing.T) {
+	_, err := parseHostSpec(":22")
+	if err == nil {
+		t.Fatal("expected error for empty host with port")
+	}
+}

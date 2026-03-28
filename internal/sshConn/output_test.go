@@ -42,6 +42,23 @@ func TestProxyWriterBuffersPartialLine(t *testing.T) {
 	}
 }
 
+func TestProxyWriterStripsCarriageReturn(t *testing.T) {
+	events := make(chan OutputEvent, 1)
+	host := &Host{Hostname: "host1"}
+	w := NewProxyWriter(events, host, 1)
+
+	_, _ = w.Write([]byte("hello\r\n"))
+
+	select {
+	case evt := <-events:
+		if evt.Line != "hello" {
+			t.Fatalf("expected carriage return stripped, got %q", evt.Line)
+		}
+	default:
+		t.Fatal("expected output event")
+	}
+}
+
 func BenchmarkProxyWriterWrite(b *testing.B) {
 	events := make(chan OutputEvent, 4096)
 	host := &Host{Hostname: "host1"}

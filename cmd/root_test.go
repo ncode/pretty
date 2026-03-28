@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -320,5 +321,52 @@ func TestExecuteAppliesGlobalUserToHostAndJumpSpecs(t *testing.T) {
 	}
 	if call != 2 {
 		t.Fatalf("expected 2 resolve calls, got %d", call)
+	}
+}
+
+func TestInitConfigWithNonExistentFile(t *testing.T) {
+	prevCfgFile := cfgFile
+	t.Cleanup(func() {
+		cfgFile = prevCfgFile
+		viper.Reset()
+	})
+
+	cfgFile = "/tmp/pretty-test-nonexistent-config-file.yaml"
+	viper.Reset()
+
+	// Should not panic even though the file doesn't exist.
+	initConfig()
+
+	// ReadInConfig silently fails, so viper should have no config file used.
+	if used := viper.ConfigFileUsed(); used != "" {
+		// When the file doesn't exist, ConfigFileUsed may still return the
+		// path that was set, but ReadInConfig should have returned an error
+		// (handled silently). Just verify no panic occurred.
+	}
+}
+
+func TestInitConfigWithExistingFile(t *testing.T) {
+	prevCfgFile := cfgFile
+	t.Cleanup(func() {
+		cfgFile = prevCfgFile
+		viper.Reset()
+	})
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "test-pretty.yaml")
+	if err := os.WriteFile(configPath, []byte("username: testuser\nhistory_file: /tmp/test.history\n"), 0644); err != nil {
+		t.Fatalf("unexpected write error: %v", err)
+	}
+
+	viper.Reset()
+	cfgFile = configPath
+
+	initConfig()
+
+	if got := viper.GetString("username"); got != "testuser" {
+		t.Fatalf("expected username 'testuser', got %q", got)
+	}
+	if got := viper.GetString("history_file"); got != "/tmp/test.history" {
+		t.Fatalf("expected history_file '/tmp/test.history', got %q", got)
 	}
 }

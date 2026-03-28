@@ -47,6 +47,34 @@ func TestExtractSentinelRejectTrailingText(t *testing.T) {
 	}
 }
 
+func TestExtractSentinelNoColon(t *testing.T) {
+	_, _, _, ok := ExtractSentinel(sentinelPrefix + "42")
+	if ok {
+		t.Fatal("expected reject without colon")
+	}
+}
+
+func TestExtractSentinelBadJobID(t *testing.T) {
+	_, _, _, ok := ExtractSentinel(sentinelPrefix + "abc:0")
+	if ok {
+		t.Fatal("expected reject with non-numeric jobID")
+	}
+}
+
+func TestExtractSentinelBadExitCode(t *testing.T) {
+	_, _, _, ok := ExtractSentinel(sentinelPrefix + "1:abc")
+	if ok {
+		t.Fatal("expected reject with non-numeric exit code")
+	}
+}
+
+func TestExtractSentinelLeadingZeroJobID(t *testing.T) {
+	_, _, _, ok := ExtractSentinel(sentinelPrefix + "042:0")
+	if ok {
+		t.Fatal("expected reject with leading-zero jobID (round-trip check)")
+	}
+}
+
 func BenchmarkExtractSentinel(b *testing.B) {
 	line := "whoami" + SentinelFor(42) + ":0"
 	b.ReportAllocs()
