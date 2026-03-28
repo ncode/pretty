@@ -1,7 +1,7 @@
 package shell
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/ncode/pretty/internal/sshConn"
 )
 
@@ -27,7 +27,7 @@ func Spawn(hostList *sshConn.HostList) {
 	events := make(chan sshConn.OutputEvent, outputBufferSize(hostCount))
 	go sshConn.Broker(hostList, broker, events)
 
-	p := tea.NewProgram(initialModel(hostList, broker, events), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(hostList, broker, events))
 	if _, err := p.Run(); err != nil {
 		panic(err)
 	}

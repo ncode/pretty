@@ -1,8 +1,13 @@
 package shell
 
-func (m model) View() string {
-	if m.quit {
-		return ""
+import tea "charm.land/bubbletea/v2"
+
+func (m model) View() tea.View {
+	var content string
+	if !m.quit {
+		content = m.viewport.View() + "\n" + m.input.View()
 	}
-	return m.viewport.View() + "\n" + m.input.View()
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }

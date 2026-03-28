@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/fatih/color"
 	"github.com/ncode/pretty/internal/jobs"
 	"github.com/ncode/pretty/internal/sshConn"
@@ -77,7 +77,7 @@ func TestListCommandColorsHostLines(t *testing.T) {
 
 	m := initialModel(hostList, nil, nil)
 	m.input.SetValue(":list")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 
 	want := hostColor.Sprint("host1: Connected(false)")
@@ -134,7 +134,7 @@ func TestModelAppendHistoryOnEnter(t *testing.T) {
 
 	m := initialModel(nil, nil, nil)
 	m.input.SetValue("ls")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	_ = updated.(model)
 
 	entries, err := loadHistory(path)
@@ -190,7 +190,7 @@ func TestHistoryNavigationUsesNewEntry(t *testing.T) {
 
 	m := initialModel(nil, nil, nil)
 	m.input.SetValue("ls")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(model)
 
 	m = pressKey(m, "up")
@@ -202,7 +202,7 @@ func TestHistoryNavigationUsesNewEntry(t *testing.T) {
 func TestScrollModeEscExits(t *testing.T) {
 	m := initialModel(nil, nil, nil)
 	m.input.SetValue(":scroll")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(model)
 	if !m.scrollMode {
 		t.Fatal("expected scroll mode")
@@ -219,49 +219,49 @@ func TestOutputDoesNotAutoFollowInScrollMode(t *testing.T) {
 	m.viewport.SetContent("one\n")
 	m.viewport.SetYOffset(0)
 	m.appendOutputs("two")
-	if m.viewport.YOffset != 0 {
-		t.Fatalf("expected viewport offset to remain, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != 0 {
+		t.Fatalf("expected viewport offset to remain, got %d", m.viewport.YOffset())
 	}
 }
 
 func TestOutputAutoFollowsWhenNotInScrollMode(t *testing.T) {
 	m := initialModel(nil, nil, nil)
-	m.viewport.Height = 1
+	m.viewport.SetHeight(1)
 	m.appendOutputs("one")
 	m.appendOutputs("two")
-	if m.viewport.YOffset != 1 {
-		t.Fatalf("expected viewport offset to be at bottom, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != 1 {
+		t.Fatalf("expected viewport offset to be at bottom, got %d", m.viewport.YOffset())
 	}
 }
 
 func TestOutputDoesNotScrollOnInputNavigation(t *testing.T) {
 	m := initialModel(nil, nil, nil)
 	m.history = newHistory(nil)
-	m.viewport.Height = 1
+	m.viewport.SetHeight(1)
 	m.appendOutputs("one", "two", "three")
-	start := m.viewport.YOffset
+	start := m.viewport.YOffset()
 	if start == 0 {
 		t.Fatalf("expected non-zero bottom offset, got %d", start)
 	}
 
 	m = pressKey(m, "up")
-	if m.viewport.YOffset != start {
-		t.Fatalf("expected offset unchanged on up, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != start {
+		t.Fatalf("expected offset unchanged on up, got %d", m.viewport.YOffset())
 	}
 
 	m = pressKey(m, "down")
-	if m.viewport.YOffset != start {
-		t.Fatalf("expected offset unchanged on down, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != start {
+		t.Fatalf("expected offset unchanged on down, got %d", m.viewport.YOffset())
 	}
 
 	m = pressKey(m, "left")
-	if m.viewport.YOffset != start {
-		t.Fatalf("expected offset unchanged on left, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != start {
+		t.Fatalf("expected offset unchanged on left, got %d", m.viewport.YOffset())
 	}
 
 	m = pressKey(m, "right")
-	if m.viewport.YOffset != start {
-		t.Fatalf("expected offset unchanged on right, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != start {
+		t.Fatalf("expected offset unchanged on right, got %d", m.viewport.YOffset())
 	}
 }
 
@@ -278,27 +278,27 @@ func TestScrollModeDoesNotChangePromptBuffer(t *testing.T) {
 
 func TestScrollModeScrollKeysAffectViewport(t *testing.T) {
 	m := initialModel(nil, nil, nil)
-	m.viewport.Height = 1
+	m.viewport.SetHeight(1)
 	m.appendOutputs("one", "two", "three")
-	bottom := m.viewport.YOffset
+	bottom := m.viewport.YOffset()
 	if bottom == 0 {
 		t.Fatalf("expected non-zero bottom offset, got %d", bottom)
 	}
 	m = pressKey(m, "up")
-	if m.viewport.YOffset != bottom {
-		t.Fatalf("expected viewport offset unchanged outside scroll mode, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() != bottom {
+		t.Fatalf("expected viewport offset unchanged outside scroll mode, got %d", m.viewport.YOffset())
 	}
 	m.scrollMode = true
 	m = pressKey(m, "up")
-	if m.viewport.YOffset >= bottom {
-		t.Fatalf("expected viewport offset to decrease, got %d", m.viewport.YOffset)
+	if m.viewport.YOffset() >= bottom {
+		t.Fatalf("expected viewport offset to decrease, got %d", m.viewport.YOffset())
 	}
 }
 
 func TestHelpIncludesScroll(t *testing.T) {
 	m := initialModel(nil, nil, nil)
 	m.input.SetValue(":help")
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 
 	joined := strings.Join(um.output.Lines(), "\n")
@@ -319,7 +319,7 @@ func TestCtrlCForwardsInterrupt(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return now }
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	um := updated.(model)
 	if um.quit {
 		t.Fatal("expected not to quit on first ctrl+c")
@@ -340,13 +340,13 @@ func TestCtrlCDoublePressQuits(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return base }
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	m = updated.(model)
 	_ = runCmd(t, cmd)
 	_ = readRequest(t, broker)
 
 	m.now = func() time.Time { return base.Add(400 * time.Millisecond) }
-	updated, quitCmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, quitCmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	um := updated.(model)
 	if !um.quit {
 		t.Fatal("expected quit on double ctrl+c")
@@ -367,12 +367,12 @@ func TestCtrlCAfterTimeoutForwardsAgain(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return base }
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	_ = runCmd(t, cmd)
 	_ = readRequest(t, broker)
 
 	m.now = func() time.Time { return base.Add(600 * time.Millisecond) }
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	um := updated.(model)
 	if um.quit {
 		t.Fatal("expected not to quit after timeout")
@@ -389,7 +389,7 @@ func TestCtrlZForwardsSuspend(t *testing.T) {
 	broker := make(chan sshConn.CommandRequest, 1)
 	m := initialModel(nil, broker, nil)
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'z', Mod: tea.ModCtrl})
 	um := updated.(model)
 	if um.quit {
 		t.Fatal("expected not to quit on ctrl+z")
@@ -408,7 +408,7 @@ func TestControlKeysForwardInScrollMode(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return now }
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	um := updated.(model)
 	if um.quit {
 		t.Fatal("expected not to quit on ctrl+c in scroll mode")
@@ -420,7 +420,7 @@ func TestControlKeysForwardInScrollMode(t *testing.T) {
 		t.Fatalf("expected 0x03, got 0x%02x", req.ControlByte)
 	}
 
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'z', Mod: tea.ModCtrl})
 	um = updated.(model)
 	if um.quit {
 		t.Fatal("expected not to quit on ctrl+z in scroll mode")
@@ -455,22 +455,22 @@ func readRequest(t *testing.T, broker <-chan sshConn.CommandRequest) sshConn.Com
 }
 
 func pressKey(m model, key string) model {
-	var msg tea.KeyMsg
+	var msg tea.KeyPressMsg
 	switch key {
 	case "up":
-		msg = tea.KeyMsg{Type: tea.KeyUp}
+		msg = tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
-		msg = tea.KeyMsg{Type: tea.KeyDown}
+		msg = tea.KeyPressMsg{Code: tea.KeyDown}
 	case "enter":
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
+		msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		msg = tea.KeyMsg{Type: tea.KeyEsc}
+		msg = tea.KeyPressMsg{Code: tea.KeyEsc}
 	case "left":
-		msg = tea.KeyMsg{Type: tea.KeyLeft}
+		msg = tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "right":
-		msg = tea.KeyMsg{Type: tea.KeyRight}
+		msg = tea.KeyPressMsg{Code: tea.KeyRight}
 	default:
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		msg = tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 	}
 	updated, _ := m.Update(msg)
 	return updated.(model)
