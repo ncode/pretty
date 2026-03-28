@@ -332,6 +332,8 @@ func sendCommand(broker chan<- sshConn.CommandRequest, request sshConn.CommandRe
 	}
 }
 
+var runCommandFunc = sshConn.RunCommand
+
 func runAsync(jobID int, command string, hosts []*sshConn.Host, events chan<- sshConn.OutputEvent, manager *jobs.Manager) tea.Cmd {
 	if len(hosts) == 0 {
 		return nil
@@ -340,7 +342,7 @@ func runAsync(jobID int, command string, hosts []*sshConn.Host, events chan<- ss
 		for _, host := range hosts {
 			h := host
 			go func() {
-				exitCode, err := sshConn.RunCommand(h, command, jobID, events)
+				exitCode, err := runCommandFunc(h, command, jobID, events)
 				if err != nil {
 					manager.MarkHostDone(jobID, h.Hostname, exitCode, false)
 					return

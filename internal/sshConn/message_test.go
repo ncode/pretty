@@ -94,6 +94,92 @@ func TestWorkerHandlesRequestsWithStubSession(t *testing.T) {
 	}
 }
 
+func TestWorkerSessionError(t *testing.T) {
+	prevConn := connectionFunc
+	prevSess := sessionFunc
+	t.Cleanup(func() {
+		connectionFunc = prevConn
+		sessionFunc = prevSess
+	})
+
+	connectionFunc = func(host *Host) (*ssh.Client, error) {
+		return &ssh.Client{}, nil
+	}
+	sessionFunc = func(connection *ssh.Client, host *Host, stdout, stderr io.Writer) (io.WriteCloser, *ssh.Session, error) {
+		return nil, nil, errors.New("session failed")
+	}
+
+	host := &Host{Hostname: "host1"}
+	events := make(chan OutputEvent, 2)
+	input := make(chan CommandRequest)
+	close(input)
+
+	worker(host, input, events)
+
+	if atomic.LoadInt32(&host.IsConnected) != 0 {
+		t.Fatal("expected host disconnected after session error")
+	}
+
+	select {
+	case evt := <-events:
+		if !evt.System {
+			t.Fatal("expected system event")
+		}
+		if !strings.Contains(evt.Line, "session failed") {
+			t.Fatalf("unexpected event line: %q", evt.Line)
+		}
+	default:
+		t.Fatal("expected session error event")
+	}
+}
+
+type errorWriteCloser struct{}
+
+func (w *errorWriteCloser) Write(p []byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func (w *errorWriteCloser) Close() error { return nil }
+
+func TestWorkerControlByteWriteError(t *testing.T) {
+	prevConn := connectionFunc
+	prevSess := sessionFunc
+	t.Cleanup(func() {
+		connectionFunc = prevConn
+		sessionFunc = prevSess
+	})
+
+	connectionFunc = func(host *Host) (*ssh.Client, error) {
+		return &ssh.Client{}, nil
+	}
+	sessionFunc = func(connection *ssh.Client, host *Host, stdout, stderr io.Writer) (io.WriteCloser, *ssh.Session, error) {
+		return &errorWriteCloser{}, nil, nil
+	}
+
+	host := &Host{Hostname: "host1"}
+	events := make(chan OutputEvent, 2)
+	input := make(chan CommandRequest, 1)
+	input <- CommandRequest{Kind: CommandKindControl, JobID: 1, ControlByte: 0x03}
+	close(input)
+
+	worker(host, input, events)
+
+	found := false
+	for {
+		select {
+		case evt := <-events:
+			if evt.System && strings.Contains(evt.Line, "unable to send control byte") {
+				found = true
+			}
+		default:
+			if !found {
+				t.Fatal("expected system error event about control byte write failure")
+			}
+			return
+		}
+	}
+}
+
 func TestBrokerDispatchesOnlyToConnectedHosts(t *testing.T) {
 	prevWorker := workerRunner
 	t.Cleanup(func() {

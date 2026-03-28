@@ -264,6 +264,189 @@ func writeTempKey(t *testing.T) string {
 	return path
 }
 
+func TestGetValueUserConfigHit(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  HostName 10.0.0.1\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, err := resolver.getValue("web", "HostName")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "10.0.0.1" {
+		t.Fatalf("expected 10.0.0.1, got %q", val)
+	}
+}
+
+func TestGetValueFallsToSystem(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	systemCfg := writeTempConfig(t, "Host web\n  ProxyJump bastion\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg, System: systemCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, err := resolver.getValue("web", "ProxyJump")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "bastion" {
+		t.Fatalf("expected bastion from system config, got %q", val)
+	}
+}
+
+func TestGetValueBothMissReturnsEmpty(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	systemCfg := writeTempConfig(t, "Host db\n  Port 3333\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg, System: systemCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, err := resolver.getValue("web", "ProxyJump")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "" {
+		t.Fatalf("expected empty string, got %q", val)
+	}
+}
+
+func TestGetAllValuesMergesBothConfigs(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  IdentityFile ~/.ssh/user_key\n")
+	systemCfg := writeTempConfig(t, "Host web\n  IdentityFile ~/.ssh/system_key\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg, System: systemCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	vals, err := resolver.getAllValues("web", "IdentityFile")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(vals) != 2 {
+		t.Fatalf("expected 2 values, got %d: %v", len(vals), vals)
+	}
+}
+
+func TestGetAllValuesFiltersBlank(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	vals, err := resolver.getAllValues("web", "IdentityFile")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, v := range vals {
+		if v == "" {
+			t.Fatalf("blank value should be filtered out")
+		}
+	}
+}
+
+func TestExpandPathEmpty(t *testing.T) {
+	if got := expandPath(""); got != "" {
+		t.Fatalf("expected empty, got %q", got)
+	}
+}
+
+func TestExpandPathTildeAlone(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+	if got := expandPath("~"); got != home {
+		t.Fatalf("expected %q, got %q", home, got)
+	}
+}
+
+func TestExpandPathTildeSubdir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir")
+	}
+	want := filepath.Join(home, "subdir")
+	if got := expandPath("~/subdir"); got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestExpandPathAbsoluteUnchanged(t *testing.T) {
+	if got := expandPath("/tmp/foo"); got != "/tmp/foo" {
+		t.Fatalf("expected /tmp/foo, got %q", got)
+	}
+}
+
+func TestCurrentUserReturnsNonEmpty(t *testing.T) {
+	u := currentUser()
+	if u == "" {
+		t.Fatal("expected non-empty username from currentUser()")
+	}
+}
+
+func TestLoadSSHConfigEmptyPaths(t *testing.T) {
+	resolver, err := LoadSSHConfig(SSHConfigPaths{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolver == nil {
+		t.Fatal("expected non-nil resolver")
+	}
+}
+
+func TestLoadConfigEmptyPath(t *testing.T) {
+	cfg, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Fatal("expected nil config for empty path")
+	}
+}
+
+func TestLoadConfigNonExistentPath(t *testing.T) {
+	cfg, err := loadConfig("/nonexistent/config")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Fatal("expected nil config for non-existent path")
+	}
+}
+
+func TestResolveNilConfig(t *testing.T) {
+	resolver := &SSHConfigResolver{}
+	result, err := resolver.resolve(nil, "web")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Fatal("expected nil result for nil config")
+	}
+}
+
+func TestGetValueWithNilConfigs(t *testing.T) {
+	resolver := &SSHConfigResolver{}
+	val, err := resolver.getValue("web", "HostName")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "" {
+		t.Fatalf("expected empty, got %q", val)
+	}
+}
+
+func TestGetAllValuesWithNilConfigs(t *testing.T) {
+	resolver := &SSHConfigResolver{}
+	vals, err := resolver.getAllValues("web", "IdentityFile")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("expected empty, got %v", vals)
+	}
+}
+
 func writeTempConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config")

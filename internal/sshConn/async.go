@@ -7,7 +7,7 @@ import (
 )
 
 func RunCommand(host *Host, command string, jobID int, events chan<- OutputEvent) (int, error) {
-	connection, err := Connection(host)
+	connection, err := connectionFunc(host)
 	if err != nil {
 		emitSystem(events, host, fmt.Sprintf("error connection to host %s: %v", host.Hostname, err))
 		return 1, err
