@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/fatih/color"
 	"github.com/ncode/pretty/internal/jobs"
 	"github.com/ncode/pretty/internal/sshConn"
@@ -47,7 +47,7 @@ func initialModel(hostList *sshConn.HostList, broker chan<- sshConn.CommandReque
 	input.Prompt = promptFromConfig()
 	input.Focus()
 
-	vp := viewport.New(0, 0)
+	vp := viewport.New()
 	vp.SetContent("")
 
 	historyEntries, _ := loadHistory(viper.GetString("history_file"))
@@ -131,7 +131,7 @@ func (m *model) appendLines(lines ...string) {
 }
 
 func (m *model) flushOutputs() {
-	offset := m.viewport.YOffset
+	offset := m.viewport.YOffset()
 	m.viewport.SetContent(m.output.String())
 	if m.scrollMode {
 		m.viewport.SetYOffset(offset)
@@ -147,7 +147,7 @@ func (m *model) appendOutputs(lines ...string) {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			now := m.now()
@@ -270,9 +270,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if height < 0 {
 			height = 0
 		}
-		m.viewport.Width = msg.Width
-		m.viewport.Height = height
-		m.input.Width = msg.Width
+		m.viewport.SetWidth(msg.Width)
+		m.viewport.SetHeight(height)
+		m.input.SetWidth(msg.Width)
 		return m, nil
 	case outputMsg:
 		needsFlush := false
