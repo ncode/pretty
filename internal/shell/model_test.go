@@ -516,6 +516,21 @@ func TestHostnames(t *testing.T) {
 	}
 }
 
+func TestWindowSizeMsgSetsViewportAndInput(t *testing.T) {
+	m := initialModel(nil, nil, nil)
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if cmd != nil {
+		t.Fatalf("expected nil cmd, got %v", cmd)
+	}
+	um := updated.(model)
+	if um.viewport.Width() != 120 {
+		t.Fatalf("expected viewport width 120, got %d", um.viewport.Width())
+	}
+	if um.viewport.Height() != 39 {
+		t.Fatalf("expected viewport height 39, got %d", um.viewport.Height())
+	}
+}
+
 func TestInitReturnsNilCmdWithoutEvents(t *testing.T) {
 	m := initialModel(nil, nil, nil)
 	if cmd := m.Init(); cmd != nil {
