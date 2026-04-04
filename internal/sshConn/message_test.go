@@ -2,8 +2,10 @@ package sshConn
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -217,5 +219,85 @@ func TestBrokerDispatchesOnlyToConnectedHosts(t *testing.T) {
 	case extra := <-dispatched:
 		t.Fatalf("unexpected extra dispatch: %s", extra)
 	default:
+	}
+}
+
+func BenchmarkBrokerDispatch(b *testing.B) {
+	for _, mode := range []struct {
+		name   string
+		buffer int
+	}{
+		{name: "unbuffered", buffer: 0},
+		{name: "buffered_1", buffer: 1},
+	} {
+		for _, hostCount := range []int{1, 8, 32, 128} {
+			b.Run(fmt.Sprintf("%s/hosts_%d", mode.name, hostCount), func(b *testing.B) {
+				benchmarkBrokerDispatchMode(b, hostCount, mode.buffer)
+			})
+		}
+	}
+}
+
+func benchmarkBrokerDispatchMode(b *testing.B, hostCount, bufferSize int) {
+	prevWorker := workerRunner
+	defer func() {
+		workerRunner = prevWorker
+	}()
+
+	hostList := NewHostList()
+	for i := 0; i < hostCount; i++ {
+		hostList.AddHost(&Host{
+			Hostname:    fmt.Sprintf("host-%d", i),
+			IsConnected: 1,
+		})
+	}
+
+	var ready sync.WaitGroup
+	var drained sync.WaitGroup
+	ready.Add(hostCount)
+	drained.Add(hostCount)
+
+	workerRunner = func(host *Host, input <-chan CommandRequest, events chan<- OutputEvent) {
+		ready.Done()
+		for i := 0; i < b.N; i++ {
+			<-input
+		}
+		drained.Done()
+	}
+
+	input := make(chan CommandRequest)
+	done := make(chan struct{})
+	go func() {
+		brokerWithBuffer(hostList, input, nil, bufferSize)
+		close(done)
+	}()
+
+	ready.Wait()
+
+	request := CommandRequest{Kind: CommandKindRun, JobID: 1, Command: "date"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		input <- request
+	}
+	b.StopTimer()
+
+	close(input)
+	<-done
+	drained.Wait()
+}
+
+func brokerWithBuffer(hostList *HostList, input <-chan CommandRequest, events chan<- OutputEvent, bufferSize int) {
+	for _, host := range hostList.Hosts() {
+		host.Channel = make(chan CommandRequest, bufferSize)
+		go workerRunner(host, host.Channel, events)
+	}
+
+	for request := range input {
+		for _, host := range hostList.Hosts() {
+			if atomic.LoadInt32(&host.IsConnected) == 1 {
+				host.Channel <- request
+			}
+		}
 	}
 }
