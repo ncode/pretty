@@ -12,6 +12,8 @@ var (
 	workerRunner   = worker
 )
 
+const brokerChannelBufferSize = 1
+
 type ProxyWriter struct {
 	events chan<- OutputEvent
 	host   *Host
@@ -105,7 +107,7 @@ func worker(host *Host, input <-chan CommandRequest, events chan<- OutputEvent) 
 
 func Broker(hostList *HostList, input <-chan CommandRequest, events chan<- OutputEvent) {
 	for _, host := range hostList.Hosts() {
-		host.Channel = make(chan CommandRequest)
+		host.Channel = make(chan CommandRequest, brokerChannelBufferSize)
 		go workerRunner(host, host.Channel, events)
 	}
 
