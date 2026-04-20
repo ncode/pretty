@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -80,6 +81,49 @@ func TestResolveHostFallbackUser(t *testing.T) {
 	}
 	if resolved.User != "fallback" {
 		t.Fatalf("unexpected resolved user: %+v", resolved)
+	}
+}
+
+func TestResolveHostUsesCurrentUserWhenNoFallback(t *testing.T) {
+	// With no explicit user, no User directive, and an empty fallbackUser,
+	// ResolveHost must fall back to the OS current user. This exercises the
+	// `userValue = currentUser()` branch that is otherwise masked by the
+	// explicit fallback used in every other test in this file.
+	resolver, err := LoadSSHConfig(SSHConfigPaths{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "host-no-user"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.User == "" {
+		t.Fatalf("expected a non-empty OS user when fallback is empty, got %+v", resolved)
+	}
+	if resolved.User != currentUser() {
+		t.Fatalf("expected OS current user %q, got %q", currentUser(), resolved.User)
+	}
+}
+
+func TestResolveHostPrefersExplicitAliasOverHost(t *testing.T) {
+	// HostSpec.Alias takes precedence over Host for config lookup; this
+	// covers the `alias = spec.Alias` branch that the other tests never hit
+	// because they always set Host directly.
+	cfg := "Host canonical\n  HostName canonical.internal\n  User deploy\n"
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "ignored", Alias: "canonical"}, "me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Alias != "canonical" {
+		t.Fatalf("expected alias to win over host, got %+v", resolved)
+	}
+	if resolved.Host != "canonical.internal" {
+		t.Fatalf("expected HostName to resolve via alias, got %+v", resolved)
 	}
 }
 
@@ -179,6 +223,20 @@ func TestLoadIdentityFilesReturnsErrorForMalformedPrivateKey(t *testing.T) {
 	_, err := LoadIdentityFiles([]string{path})
 	if err == nil {
 		t.Fatalf("expected error for malformed private key")
+	}
+}
+
+func TestLoadIdentityFilesWrapsNonNotExistReadError(t *testing.T) {
+	// Passing a directory where a file is expected produces a read error
+	// that is not os.ErrNotExist, which must be surfaced with a wrapped,
+	// path-qualified message rather than swallowed.
+	dir := t.TempDir()
+	_, err := LoadIdentityFiles([]string{dir})
+	if err == nil {
+		t.Fatalf("expected read error for directory path")
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Fatalf("expected wrapped error to include the offending path, got %q", err.Error())
 	}
 }
 
@@ -320,6 +378,16 @@ func TestParseProxyJumpNoneDisablesJumps(t *testing.T) {
 		if got := ParseProxyJump(in); len(got) != 0 {
 			t.Fatalf("ParseProxyJump(%q) = %v, want empty", in, got)
 		}
+	}
+}
+
+func TestParseProxyJumpSkipsEmptyComponents(t *testing.T) {
+	// Empty/whitespace-only segments between commas are dropped rather than
+	// surfacing as blank jump entries to the dialer.
+	got := ParseProxyJump(" ,jump1, ,jump2,")
+	want := []string{"jump1", "jump2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseProxyJump skipped-empty: got %v, want %v", got, want)
 	}
 }
 
@@ -654,6 +722,45 @@ func TestLoadConfigNonExistentPath(t *testing.T) {
 	}
 }
 
+func TestLoadConfigSurfacesNonNotExistOpenError(t *testing.T) {
+	// Using a regular file as an intermediate path component produces an
+	// ENOTDIR error from os.Open, which is not os.IsNotExist. loadConfig
+	// must surface that error instead of silently returning nil.
+	base := filepath.Join(t.TempDir(), "not_a_dir")
+	if err := os.WriteFile(base, []byte("placeholder"), 0o600); err != nil {
+		t.Fatalf("failed to seed placeholder file: %v", err)
+	}
+	cfg, err := loadConfig(filepath.Join(base, "config"))
+	if err == nil {
+		t.Fatalf("expected non-nil error for ENOTDIR path")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config when open errors, got %+v", cfg)
+	}
+}
+
+func TestLoadSSHConfigPropagatesUserLoadError(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "user_placeholder")
+	if err := os.WriteFile(base, []byte("x"), 0o600); err != nil {
+		t.Fatalf("failed to seed placeholder: %v", err)
+	}
+	_, err := LoadSSHConfig(SSHConfigPaths{User: filepath.Join(base, "config")})
+	if err == nil {
+		t.Fatalf("expected user loadConfig error to propagate")
+	}
+}
+
+func TestLoadSSHConfigPropagatesSystemLoadError(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "sys_placeholder")
+	if err := os.WriteFile(base, []byte("x"), 0o600); err != nil {
+		t.Fatalf("failed to seed placeholder: %v", err)
+	}
+	_, err := LoadSSHConfig(SSHConfigPaths{System: filepath.Join(base, "config")})
+	if err == nil {
+		t.Fatalf("expected system loadConfig error to propagate")
+	}
+}
+
 func TestResolveNilConfig(t *testing.T) {
 	resolver := &SSHConfigResolver{}
 	result, err := resolver.resolve(nil, "web")
@@ -662,6 +769,83 @@ func TestResolveNilConfig(t *testing.T) {
 	}
 	if result != nil {
 		t.Fatal("expected nil result for nil config")
+	}
+}
+
+func TestResolveHostInvalidPortSurfacesError(t *testing.T) {
+	cfg := "Host web\n  Port not-a-number\n"
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = resolver.ResolveHost(HostSpec{Host: "web"}, "me")
+	if err == nil {
+		t.Fatalf("expected invalid Port value to produce a wrapped error")
+	}
+	if !strings.Contains(err.Error(), "invalid port") {
+		t.Fatalf("expected wrapped error to mention invalid port, got %q", err.Error())
+	}
+}
+
+func TestResolveHostEmptyAliasSurfacesResolverError(t *testing.T) {
+	// The underlying ssh_config library requires a non-empty HostArg and
+	// returns an error otherwise. ResolveHost must surface that rather than
+	// continuing to connect to a nameless host.
+	userCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = resolver.ResolveHost(HostSpec{}, "")
+	if err == nil {
+		t.Fatalf("expected error for empty host/alias")
+	}
+}
+
+func TestGetValueSurfacesUserResolverError(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := resolver.getValue("", "User"); err == nil {
+		t.Fatalf("expected resolver error for empty alias via user config")
+	}
+}
+
+func TestGetValueSurfacesSystemResolverError(t *testing.T) {
+	// Only a system config is loaded so the error must come from the system
+	// branch of getValue rather than the user branch.
+	systemCfg := writeTempConfig(t, "Host web\n  User deploy\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{System: systemCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := resolver.getValue("", "User"); err == nil {
+		t.Fatalf("expected resolver error for empty alias via system config")
+	}
+}
+
+func TestGetAllValuesSurfacesUserResolverError(t *testing.T) {
+	userCfg := writeTempConfig(t, "Host web\n  IdentityFile ~/.ssh/id\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := resolver.getAllValues("", "IdentityFile"); err == nil {
+		t.Fatalf("expected resolver error for empty alias via user config")
+	}
+}
+
+func TestGetAllValuesSurfacesSystemResolverError(t *testing.T) {
+	systemCfg := writeTempConfig(t, "Host web\n  IdentityFile ~/.ssh/id\n")
+	resolver, err := LoadSSHConfig(SSHConfigPaths{System: systemCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := resolver.getAllValues("", "IdentityFile"); err == nil {
+		t.Fatalf("expected resolver error for empty alias via system config")
 	}
 }
 
