@@ -1,6 +1,7 @@
 package sshConn
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -242,19 +243,50 @@ func ParseProxyJump(value string) []string {
 	return jumps
 }
 
+// LoadIdentityFiles returns SSH auth methods for every identity file that
+// contains a usable private key locally.
+//
+// IdentityFile entries that the local process cannot use directly (missing
+// files, public-key-only files backing a hardware token such as yubikey-agent,
+// or passphrase-protected keys) are skipped so that authentication can still
+// proceed through the SSH agent. This mirrors OpenSSH's behaviour, which
+// silently tolerates these cases instead of aborting the connection.
 func LoadIdentityFiles(paths []string) ([]ssh.AuthMethod, error) {
 	methods := make([]ssh.AuthMethod, 0, len(paths))
 	for _, path := range paths {
 		expanded := expandPath(path)
 		key, err := os.ReadFile(expanded)
 		if err != nil {
-			return nil, err
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("unable to read identity file %q: %w", expanded, err)
 		}
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
-			return nil, err
+			if isAgentCoveredIdentity(key, err) {
+				continue
+			}
+			return nil, fmt.Errorf("unable to parse identity file %q: %w", expanded, err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
 	}
 	return methods, nil
+}
+
+// isAgentCoveredIdentity reports whether an identity file that we failed to
+// parse as a private key should be delegated to the SSH agent. Typical cases:
+//
+//   - The file stores only a public key (e.g. a hardware-token pub key in
+//     `~/.ssh/...`) while the private half lives on the token itself and is
+//     exposed exclusively through a signing agent.
+//   - The key is encrypted and no passphrase is available to this process.
+func isAgentCoveredIdentity(data []byte, parseErr error) bool {
+	if _, ok := parseErr.(*ssh.PassphraseMissingError); ok {
+		return true
+	}
+	if _, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
+		return true
+	}
+	return false
 }

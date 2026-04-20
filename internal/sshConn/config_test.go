@@ -1,6 +1,7 @@
 package sshConn
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"testing"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
 
@@ -80,10 +82,13 @@ func TestResolveHostFallbackUser(t *testing.T) {
 	}
 }
 
-func TestLoadIdentityFilesFailFast(t *testing.T) {
-	_, err := LoadIdentityFiles([]string{"/does/not/exist"})
-	if err == nil {
-		t.Fatalf("expected error")
+func TestLoadIdentityFilesSkipsMissing(t *testing.T) {
+	methods, err := LoadIdentityFiles([]string{"/does/not/exist"})
+	if err != nil {
+		t.Fatalf("expected missing identity files to be skipped silently, got error: %v", err)
+	}
+	if len(methods) != 0 {
+		t.Fatalf("expected no auth methods for missing file, got %d", len(methods))
 	}
 }
 
@@ -95,6 +100,84 @@ func TestLoadIdentityFilesSuccess(t *testing.T) {
 	}
 	if len(methods) != 1 {
 		t.Fatalf("expected one auth method, got %d", len(methods))
+	}
+}
+
+func TestLoadIdentityFilesSkipsPublicKey(t *testing.T) {
+	// Public key only files (e.g. hardware-token identities served by an agent
+	// such as yubikey-agent) must not abort the connection attempt. We
+	// synthesize an authorized_keys line from a freshly generated ed25519 key
+	// so the test has no static key material embedded in the source tree.
+	pubKey := generateTestPublicKeyLine(t)
+	path := filepath.Join(t.TempDir(), "hardware_token.pub")
+	if err := os.WriteFile(path, []byte(pubKey), 0o600); err != nil {
+		t.Fatalf("failed to write pub key: %v", err)
+	}
+
+	methods, err := LoadIdentityFiles([]string{path})
+	if err != nil {
+		t.Fatalf("expected public key identity to be skipped silently, got error: %v", err)
+	}
+	if len(methods) != 0 {
+		t.Fatalf("expected no auth methods from public key, got %d", len(methods))
+	}
+}
+
+func TestLoadIdentityFilesMixedSkipsUnusable(t *testing.T) {
+	// A private key is returned, while a co-located public key is ignored so
+	// that authentication keeps working when the agent handles that identity.
+	privPath := writeTempKey(t)
+	pubPath := filepath.Join(t.TempDir(), "hardware.pub")
+	pubKey := generateTestPublicKeyLine(t)
+	if err := os.WriteFile(pubPath, []byte(pubKey), 0o600); err != nil {
+		t.Fatalf("failed to write pub key: %v", err)
+	}
+
+	methods, err := LoadIdentityFiles([]string{pubPath, privPath, "/does/not/exist"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(methods) != 1 {
+		t.Fatalf("expected only the parseable private key to produce an auth method, got %d", len(methods))
+	}
+}
+
+func TestLoadIdentityFilesSkipsPassphraseProtected(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	der := x509.MarshalPKCS1PrivateKey(key)
+	encrypted, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", der, []byte("secret"), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatalf("failed to encrypt key: %v", err)
+	}
+	data := pem.EncodeToMemory(encrypted)
+	path := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("failed to write key: %v", err)
+	}
+
+	methods, err := LoadIdentityFiles([]string{path})
+	if err != nil {
+		t.Fatalf("expected passphrase-protected identity to be skipped silently, got error: %v", err)
+	}
+	if len(methods) != 0 {
+		t.Fatalf("expected no auth methods from passphrase-protected key, got %d", len(methods))
+	}
+}
+
+func TestLoadIdentityFilesReturnsErrorForMalformedPrivateKey(t *testing.T) {
+	// Malformed PEM (starts with a PEM header but is not a valid key) should
+	// still bubble up an error so operators notice the misconfigured file.
+	path := filepath.Join(t.TempDir(), "id_rsa")
+	malformed := "-----BEGIN RSA PRIVATE KEY-----\nnot-base64-valid\n-----END RSA PRIVATE KEY-----\n"
+	if err := os.WriteFile(path, []byte(malformed), 0o600); err != nil {
+		t.Fatalf("failed to write malformed key: %v", err)
+	}
+	_, err := LoadIdentityFiles([]string{path})
+	if err == nil {
+		t.Fatalf("expected error for malformed private key")
 	}
 }
 
@@ -243,6 +326,22 @@ func startTestAgent(t *testing.T) string {
 		_ = os.RemoveAll(dir)
 	})
 	return socketPath
+}
+
+// generateTestPublicKeyLine produces a freshly generated authorized_keys-style
+// line (type + base64 blob + comment) so tests do not ship static key material
+// in-tree. The key is ephemeral and has no corresponding private half on disk.
+func generateTestPublicKeyLine(t *testing.T) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ed25519 key: %v", err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("failed to wrap public key: %v", err)
+	}
+	return string(ssh.MarshalAuthorizedKey(sshPub))
 }
 
 func writeTempKey(t *testing.T) string {
