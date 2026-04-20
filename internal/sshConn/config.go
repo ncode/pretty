@@ -1,17 +1,63 @@
 package sshConn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	sshconfig "github.com/ncode/ssh_config"
 	"golang.org/x/crypto/ssh"
 )
+
+// matchExecTimeout bounds how long a `Match ... exec "..."` probe may run.
+// OpenSSH itself does not impose a timeout, but pretty resolves many hosts in
+// a row (including per-host ProxyJump resolution) so we cap each probe to
+// avoid hanging the CLI if a user's exec command never returns.
+const matchExecTimeout = 10 * time.Second
+
+// matchExecFunc evaluates `Match ... exec "<cmd>"` directives. It is a package
+// variable so tests can substitute a deterministic stub without shelling out.
+// It must return (true, nil) if the command exits with status 0, (false, nil)
+// otherwise, and only return a non-nil error for conditions the caller should
+// surface (currently unused by the resolver because we do not opt into strict
+// mode).
+var matchExecFunc = shellMatchExec
+
+// shellMatchExec runs cmd via the local shell (sh -c / cmd /C on Windows) and
+// reports whether it succeeded. The command has already had its %-tokens
+// expanded by ssh_config before this function is invoked.
+func shellMatchExec(cmd string) (bool, error) {
+	if strings.TrimSpace(cmd) == "" {
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), matchExecTimeout)
+	defer cancel()
+
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		c = exec.CommandContext(ctx, "cmd", "/C", cmd)
+	} else {
+		c = exec.CommandContext(ctx, "/bin/sh", "-c", cmd)
+	}
+	c.Stdin = nil
+	c.Stdout = nil
+	c.Stderr = nil
+
+	if err := c.Run(); err != nil {
+		// Any non-zero exit or failure to launch counts as "did not match",
+		// mirroring OpenSSH's treatment of Match exec probes.
+		return false, nil
+	}
+	return true, nil
+}
 
 type SSHConfigPaths struct {
 	User   string
@@ -134,7 +180,10 @@ func (r *SSHConfigResolver) ResolveHost(spec HostSpec, fallbackUser string) (Res
 	if err != nil {
 		return ResolvedHost{}, err
 	}
-	if proxyJump != "" {
+	// OpenSSH treats `ProxyJump none` as an explicit opt-out that cancels
+	// ProxyJump inherited from broader-matching blocks. Skip parsing in that
+	// case so we don't try to dial the literal host "none".
+	if proxyJump != "" && !strings.EqualFold(strings.TrimSpace(proxyJump), "none") {
 		resolved.ProxyJump = ParseProxyJump(proxyJump)
 	}
 
@@ -200,7 +249,18 @@ func (r *SSHConfigResolver) resolve(cfg *sshconfig.Config, alias string) (*sshco
 	if cfg == nil {
 		return nil, nil
 	}
-	ctx := sshconfig.Context{HostArg: alias, OriginalHost: alias, LocalUser: currentUser()}
+	ctx := sshconfig.Context{
+		HostArg:      alias,
+		OriginalHost: alias,
+		LocalUser:    currentUser(),
+		// Providing Exec enables `Match host X exec "..."` blocks to be
+		// evaluated. Without it the library silently treats every exec
+		// predicate as non-matching, which causes directives like
+		//     Match host jump-alias exec "nc -zG 1 primary.example.net 22"
+		//         HostName primary.example.net
+		// to be skipped, leaving the alias unresolvable via DNS.
+		Exec: matchExecFunc,
+	}
 	return cfg.Resolve(ctx)
 }
 
@@ -231,14 +291,22 @@ func expandPath(path string) string {
 	return path
 }
 
+// ParseProxyJump splits a ProxyJump value into individual jump hosts. Empty
+// components are dropped, and the OpenSSH "none" sentinel (which disables
+// ProxyJump) collapses the result to an empty slice so callers never try to
+// dial a literal host named "none".
 func ParseProxyJump(value string) []string {
 	parts := strings.Split(value, ",")
 	jumps := make([]string, 0, len(parts))
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			jumps = append(jumps, trimmed)
+		if trimmed == "" {
+			continue
 		}
+		if strings.EqualFold(trimmed, "none") {
+			return nil
+		}
+		jumps = append(jumps, trimmed)
 	}
 	return jumps
 }

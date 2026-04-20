@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -181,6 +182,112 @@ func TestLoadIdentityFilesReturnsErrorForMalformedPrivateKey(t *testing.T) {
 	}
 }
 
+func TestResolveHostMatchExecApplies(t *testing.T) {
+	// Models the production pattern where a jump alias resolves to a concrete
+	// HostName only when the probe command succeeds, e.g.:
+	//   Match host jump-alias exec "nc -zG 1 primary.example.net 22"
+	//       HostName primary.example.net
+	cfg := `Match host jump-alias exec "probe-primary"
+  HostName primary.example.net
+Match host jump-alias exec "probe-secondary"
+  HostName secondary.example.net
+`
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var seen []string
+	stubExec(t, func(cmd string) (bool, error) {
+		seen = append(seen, cmd)
+		return cmd == "probe-primary", nil
+	})
+
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "jump-alias"}, "me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved.Host != "primary.example.net" {
+		t.Fatalf("expected primary HostName from matching exec block, got %q", resolved.Host)
+	}
+	if len(seen) == 0 {
+		t.Fatalf("expected exec callback to be invoked, got no calls")
+	}
+}
+
+func TestResolveHostMatchExecAllFailKeepsAlias(t *testing.T) {
+	cfg := `Match host jump-alias exec "probe-primary"
+  HostName primary.example.net
+Match host jump-alias exec "probe-secondary"
+  HostName secondary.example.net
+`
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stubExec(t, func(cmd string) (bool, error) { return false, nil })
+
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "jump-alias"}, "me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// With every exec probe failing, no HostName override applies and the
+	// alias stays as-is - this is the same state that previously surfaced as
+	// a DNS "no such host" when wiring was missing entirely.
+	if resolved.Host != "jump-alias" {
+		t.Fatalf("expected alias to remain when all exec probes fail, got %q", resolved.Host)
+	}
+}
+
+func TestShellMatchExecSucceedsForTrue(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell not available on Windows CI images")
+	}
+	ok, err := shellMatchExec("true")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected true command to succeed")
+	}
+}
+
+func TestShellMatchExecFailsForFalse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell not available on Windows CI images")
+	}
+	ok, err := shellMatchExec("false")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected false command to report non-match")
+	}
+}
+
+func TestShellMatchExecEmptyCmd(t *testing.T) {
+	ok, err := shellMatchExec("   ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected empty command to report non-match")
+	}
+}
+
+// stubExec replaces the package-level matchExecFunc for the duration of a test
+// and restores it on cleanup. This keeps Match exec evaluation deterministic
+// without shelling out.
+func stubExec(t *testing.T, fn func(cmd string) (bool, error)) {
+	t.Helper()
+	orig := matchExecFunc
+	matchExecFunc = fn
+	t.Cleanup(func() { matchExecFunc = orig })
+}
+
 func TestClientConfigForCombinedAuth(t *testing.T) {
 	socketPath := startTestAgent(t)
 	t.Setenv("SSH_AUTH_SOCK", socketPath)
@@ -203,6 +310,40 @@ func TestParseProxyJump(t *testing.T) {
 	want := []string{"jump1", "jump2"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected jumps: %+v", got)
+	}
+}
+
+func TestParseProxyJumpNoneDisablesJumps(t *testing.T) {
+	// OpenSSH: `ProxyJump none` cancels any inherited ProxyJump; it must not
+	// be treated as a literal hop.
+	for _, in := range []string{"none", "None", "NONE", "  none  "} {
+		if got := ParseProxyJump(in); len(got) != 0 {
+			t.Fatalf("ParseProxyJump(%q) = %v, want empty", in, got)
+		}
+	}
+}
+
+func TestResolveHostProxyJumpNoneClearsJumps(t *testing.T) {
+	// OpenSSH: first matching directive wins for single-valued options, so
+	// the specific block declaring `ProxyJump none` must come before the
+	// wildcard block that sets a jump. The resolved value must collapse to
+	// no jumps rather than the literal host "none".
+	cfg := `Host solo.internal
+  ProxyJump none
+Host *.internal
+  ProxyJump jump1
+`
+	userCfg := writeTempConfig(t, cfg)
+	resolver, err := LoadSSHConfig(SSHConfigPaths{User: userCfg})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resolved, err := resolver.ResolveHost(HostSpec{Host: "solo.internal"}, "me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resolved.ProxyJump) != 0 {
+		t.Fatalf("expected no proxy jumps when ProxyJump=none wins, got %v", resolved.ProxyJump)
 	}
 }
 
