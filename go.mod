@@ -5,7 +5,7 @@ go 1.26
 require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.2
-	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20260330094520-2dce04b6f8a4
+	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20260503005035-c113ba3d2310
 	github.com/fatih/color v1.19.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/ncode/ssh_config v0.0.0-20260207174636-b38c9e3f09f0
